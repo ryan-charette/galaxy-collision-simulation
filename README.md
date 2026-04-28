@@ -1,25 +1,29 @@
 # Distributed Fast Multipole Galaxy Collision Simulator
 
-A compact 2D gravitational N-body simulator for galaxy collision experiments. The project currently includes a working C++ simulation engine, CSV snapshot output, diagnostics, and Python plotting/animation tools.
+A compact 2D gravitational N-body simulator for galaxy collision experiments. The project now includes a working C++ simulation engine, CSV snapshot output, diagnostics, and Python plotting/animation tools.
 
 ## Implemented MVP
 
 - Softened Newtonian gravity in nondimensional units
 - Direct `O(N^2)` force solver for correctness baselines
-- Barnes-Hut quadtree solver on the FMM implementation path
+- Barnes-Hut quadtree solver
+- Monopole FMM solver with P2M/M2M aggregation, M2L-style cell interaction lists, and P2P near-field leaves
+- MPI rank ownership with all-rank particle synchronization
+- Optional CUDA direct/P2P force and leapfrog kernels with CPU fallback
 - Kick-drift-kick leapfrog integrator
 - Reproducible disk-galaxy initial conditions from TOML-like configs
 - CSV snapshots plus metadata and energy/momentum diagnostics
 - Python snapshot loader, static plotting, and MP4/GIF animation scripts
-- CTest smoke tests covering vectors, forces, integration, config parsing, tree accuracy, diagnostics, and snapshot writing
-- Optional MPI/CUDA detection remains in the build for future distributed/GPU milestones
+- CTest smoke tests covering vectors, forces, integration, FMM accuracy, CUDA fallback, MPI ownership, config parsing, diagnostics, and snapshot writing
 
 ## Repository Layout
 
 ```text
 cpp/core/       core particles, config, integrator, diagnostics, CLI
 cpp/direct/     direct softened-gravity solver
-cpp/fmm/        Barnes-Hut quadtree solver and future FMM home
+cpp/fmm/        Barnes-Hut treecode and monopole FMM solver
+cpp/mpi/        rank ownership and particle synchronization helpers
+cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
 cpp/io/         CSV snapshot and diagnostics writer
 cpp/tests/      C++ smoke/unit tests
 python/utils/   snapshot and diagnostics loaders
@@ -34,10 +38,12 @@ scripts/        build and smoke-test helpers
 ## Build
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=OFF -DENABLE_CUDA=OFF
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON -DENABLE_CUDA=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
+
+If MPI or CUDA are not installed, CMake falls back to the serial CPU build.
 
 On Windows PowerShell, if CMake is installed:
 
@@ -63,13 +69,27 @@ experiments/validation/smoke_test/
   ...
 ```
 
-Use the tree solver by setting:
+Choose a solver in the config:
 
 ```toml
 [simulation]
-solver = "tree"
+solver = "fmm"          # direct, tree, fmm, cuda-direct
 tree_theta = 0.6
 tree_leaf_capacity = 16
+fmm_expansion_order = 0
+```
+
+Run with MPI when available:
+
+```bash
+mpirun -np 4 ./build/fmm_galaxy_sim --config configs/smoke_test.toml
+```
+
+Run the CUDA direct/P2P kernel when a CUDA device is available:
+
+```toml
+[simulation]
+solver = "cuda-direct"
 ```
 
 ## Python Analysis
@@ -96,4 +116,4 @@ python -m python.animation.render_snapshots --input experiments/validation/smoke
 
 ## Current Scope
 
-This is a complete single-node MVP. MPI distribution, CUDA kernels, and true high-order FMM passes are still roadmap items, but the project now has the working physics, I/O, validation, and visualization backbone needed to build those pieces honestly.
+This is currently a distributed/GPU-capable MVP. The FMM uses monopole expansions (`p=0`) rather than high-order complex expansions, but the pass structure, rank ownership, synchronization, and CUDA kernel surfaces are in place for higher-order work and benchmarking.
