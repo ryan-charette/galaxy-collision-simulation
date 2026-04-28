@@ -16,26 +16,29 @@ namespace fmmgalaxy {
 
 namespace {
 
-constexpr int fields_per_particle = 8;
+constexpr int fields_per_particle = 11;
 
 void pack_particle(const Particle& particle, double* out) {
     out[0] = particle.position.x;
     out[1] = particle.position.y;
-    out[2] = particle.velocity.x;
-    out[3] = particle.velocity.y;
-    out[4] = particle.acceleration.x;
-    out[5] = particle.acceleration.y;
-    out[6] = particle.mass;
-    out[7] = static_cast<double>(particle.group_id);
+    out[2] = particle.position.z;
+    out[3] = particle.velocity.x;
+    out[4] = particle.velocity.y;
+    out[5] = particle.velocity.z;
+    out[6] = particle.acceleration.x;
+    out[7] = particle.acceleration.y;
+    out[8] = particle.acceleration.z;
+    out[9] = particle.mass;
+    out[10] = static_cast<double>(particle.group_id);
 }
 
 Particle unpack_particle(const double* data) {
     Particle particle;
-    particle.position = {data[0], data[1]};
-    particle.velocity = {data[2], data[3]};
-    particle.acceleration = {data[4], data[5]};
-    particle.mass = data[6];
-    particle.group_id = static_cast<std::uint32_t>(data[7]);
+    particle.position = {data[0], data[1], data[2]};
+    particle.velocity = {data[3], data[4], data[5]};
+    particle.acceleration = {data[6], data[7], data[8]};
+    particle.mass = data[9];
+    particle.group_id = static_cast<std::uint32_t>(data[10]);
     return particle;
 }
 
