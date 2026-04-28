@@ -1,0 +1,17 @@
+name: fmm-galaxy-sim
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - numpy
+  - scipy
+  - matplotlib
+  - h5py
+  - pandas
+  - tqdm
+  - moviepy
+  - imageio
+  - imageio-ffmpeg
+  - pyyaml
+  - cmake
+  - ninja
