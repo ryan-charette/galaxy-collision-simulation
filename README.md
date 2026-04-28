@@ -1,13 +1,13 @@
 # Distributed Fast Multipole Galaxy Collision Simulator
 
-A compact 2D gravitational N-body simulator for galaxy collision experiments. The project now includes a working C++ simulation engine, CSV snapshot output, diagnostics, and Python plotting/animation tools.
+A compact 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV snapshot output, diagnostics, and Python plotting/animation tools.
 
 ## Implemented MVP
 
 - Softened Newtonian gravity in nondimensional units
 - Direct `O(N^2)` force solver for correctness baselines
-- Barnes-Hut quadtree solver
-- Monopole FMM solver with P2M/M2M aggregation, M2L-style cell interaction lists, and P2P near-field leaves
+- Barnes-Hut octree solver with optional quadrupole far-field correction
+- FMM solver with P2M/M2M aggregation, quadrupole coefficients, M2L-style cell interaction lists, and P2P near-field leaves
 - MPI rank ownership with all-rank particle synchronization
 - Optional CUDA direct/P2P force and leapfrog kernels with CPU fallback
 - Kick-drift-kick leapfrog integrator
@@ -19,20 +19,20 @@ A compact 2D gravitational N-body simulator for galaxy collision experiments. Th
 ## Repository Layout
 
 ```text
-cpp/core/                core particles, config, integrator, diagnostics, CLI
-cpp/direct/              direct softened-gravity solver
-cpp/fmm/                 Barnes-Hut treecode and monopole FMM solver
-cpp/mpi/                 rank ownership and particle synchronization helpers
-cpp/cuda/                optional CUDA direct/P2P kernels and CPU fallback
-cpp/io/                  CSV snapshot and diagnostics writer
-cpp/tests/               C++ smoke/unit tests
-python/utils/            snapshot and diagnostics loaders
-python/analysis/static   plots
+cpp/core/       core particles, config, integrator, diagnostics, CLI
+cpp/direct/     direct softened-gravity solver
+cpp/fmm/        Barnes-Hut treecode and quadrupole FMM solver
+cpp/mpi/        rank ownership and particle synchronization helpers
+cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
+cpp/io/         CSV snapshot and diagnostics writer
+cpp/tests/      C++ smoke/unit tests
+python/utils/   snapshot and diagnostics loaders
+python/analysis/static plots
 python/animation/MP4/GIF rendering
-configs/                 simulation configs
-experiments/             output destinations and experiment notes
-docs/                    design, architecture, roadmap, testing plan
-scripts/                 build and smoke-test helpers
+configs/        simulation configs
+experiments/    output destinations and experiment notes
+docs/           design, architecture, roadmap, testing plan
+scripts/        build and smoke-test helpers
 ```
 
 ## Build
@@ -74,9 +74,10 @@ Choose a solver in the config:
 ```toml
 [simulation]
 solver = "fmm"          # direct, tree, fmm, cuda-direct
+dim = 3
 tree_theta = 0.6
 tree_leaf_capacity = 16
-fmm_expansion_order = 0
+fmm_expansion_order = 2 # 0 = monopole, 2 = quadrupole
 ```
 
 Run with MPI when available:
@@ -116,4 +117,4 @@ python -m python.animation.render_snapshots --input experiments/validation/smoke
 
 ## Current Scope
 
-This is currently a distributed/GPU-capable MVP. The FMM uses monopole expansions (`p=0`) rather than high-order complex expansions, but the pass structure, rank ownership, synchronization, and CUDA kernel surfaces are in place for higher-order work and benchmarking.
+This is now a distributed/GPU-capable 3D MVP. The FMM supports monopole (`p=0`) and quadrupole (`p=2`) coefficients; higher polynomial orders remain a natural next step on top of the current pass structure.
