@@ -7,13 +7,17 @@
 
 namespace fmmgalaxy {
 
-using Quadrupole = std::array<double, 6>;
+using MomentArray = std::array<double, 35>;
 
-Quadrupole zero_quadrupole();
-void add_quadrupole_point(Quadrupole& quadrupole, const Vec2& offset, double mass);
-void add_quadrupole_shifted_child(
-    Quadrupole& parent,
-    const Quadrupole& child,
+struct CartesianMoments {
+    MomentArray values{};
+};
+
+CartesianMoments zero_multipole_moments();
+void add_multipole_point(CartesianMoments& moments, const Vec2& offset, double mass);
+void add_multipole_shifted_child(
+    CartesianMoments& parent,
+    const CartesianMoments& child,
     const Vec2& child_offset,
     double child_mass
 );
@@ -22,7 +26,7 @@ Vec2 multipole_acceleration(
     const Vec2& target_position,
     const Vec2& source_center_of_mass,
     double source_mass,
-    const Quadrupole& source_quadrupole,
+    const CartesianMoments& source_moments,
     const PhysicsParams& params,
     int expansion_order
 );
