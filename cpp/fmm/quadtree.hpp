@@ -3,6 +3,7 @@
 #include "core/particle.hpp"
 #include "core/simulation_params.hpp"
 #include "core/vector2.hpp"
+#include "fmm/multipole.hpp"
 
 #include <array>
 #include <cstddef>
@@ -16,7 +17,8 @@ public:
         PhysicsParams params,
         double theta = 0.6,
         std::size_t leaf_capacity = 16,
-        int max_depth = 32
+        int max_depth = 32,
+        int expansion_order = 0
     );
 
     void compute(std::vector<Particle>& particles);
@@ -27,7 +29,8 @@ private:
         double half_width{1.0};
         double mass{0.0};
         Vec2 center_of_mass{};
-        std::array<int, 4> children{{-1, -1, -1, -1}};
+        Quadrupole quadrupole{};
+        std::array<int, 8> children{{-1, -1, -1, -1, -1, -1, -1, -1}};
         std::vector<std::size_t> particle_indices{};
     };
 
@@ -36,12 +39,14 @@ private:
     double theta_{0.6};
     std::size_t leaf_capacity_{16};
     int max_depth_{32};
+    int expansion_order_{0};
     std::vector<Node> nodes_{};
 
     void build(const std::vector<Particle>& particles);
     void insert_particle(int node_index, std::size_t particle_index, int depth);
     void subdivide(int node_index);
     double compute_moments(int node_index);
+    void compute_quadrupoles(int node_index);
     Vec2 accumulate_from_node(int node_index, std::size_t target_index, const Vec2& target_position) const;
     bool is_leaf(const Node& node) const;
     bool contains(const Node& node, const Vec2& position) const;
@@ -52,7 +57,8 @@ void compute_tree_accelerations(
     std::vector<Particle>& particles,
     const PhysicsParams& params,
     double theta = 0.6,
-    std::size_t leaf_capacity = 16
+    std::size_t leaf_capacity = 16,
+    int expansion_order = 0
 );
 
 }  // namespace fmmgalaxy
