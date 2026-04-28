@@ -19,20 +19,20 @@ A compact 2D gravitational N-body simulator for galaxy collision experiments. Th
 ## Repository Layout
 
 ```text
-cpp/core/       core particles, config, integrator, diagnostics, CLI
-cpp/direct/     direct softened-gravity solver
-cpp/fmm/        Barnes-Hut treecode and monopole FMM solver
-cpp/mpi/        rank ownership and particle synchronization helpers
-cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
-cpp/io/         CSV snapshot and diagnostics writer
-cpp/tests/      C++ smoke/unit tests
-python/utils/   snapshot and diagnostics loaders
-python/analysis/static plots
+cpp/core/                core particles, config, integrator, diagnostics, CLI
+cpp/direct/              direct softened-gravity solver
+cpp/fmm/                 Barnes-Hut treecode and monopole FMM solver
+cpp/mpi/                 rank ownership and particle synchronization helpers
+cpp/cuda/                optional CUDA direct/P2P kernels and CPU fallback
+cpp/io/                  CSV snapshot and diagnostics writer
+cpp/tests/               C++ smoke/unit tests
+python/utils/            snapshot and diagnostics loaders
+python/analysis/static   plots
 python/animation/MP4/GIF rendering
-configs/        simulation configs
-experiments/    output destinations and experiment notes
-docs/           design, architecture, roadmap, testing plan
-scripts/        build and smoke-test helpers
+configs/                 simulation configs
+experiments/             output destinations and experiment notes
+docs/                    design, architecture, roadmap, testing plan
+scripts/                 build and smoke-test helpers
 ```
 
 ## Build
