@@ -36,7 +36,7 @@ struct CliOptions {
 void print_usage(const char* executable) {
     std::cout
         << "Usage: " << executable << " [--config path] [--output directory]\n\n"
-        << "Runs the 2D softened-gravity galaxy collision simulator.\n"
+        << "Runs the 2D/3D softened-gravity galaxy collision simulator.\n"
         << "If --config is omitted, a small built-in two-galaxy smoke config is used.\n";
 }
 
@@ -64,7 +64,7 @@ bool uses_tree_solver(const std::string& solver) {
 }
 
 bool uses_fmm_solver(const std::string& solver) {
-    return solver == "fmm" || solver == "monopole-fmm";
+    return solver == "fmm" || solver == "monopole-fmm" || solver == "quadrupole-fmm";
 }
 
 bool uses_cuda_direct_solver(const std::string& solver) {
@@ -90,7 +90,8 @@ void compute_serial_accelerations(
             particles,
             config.physics,
             config.tree_theta,
-            config.tree_leaf_capacity
+            config.tree_leaf_capacity,
+            config.fmm_expansion_order
         );
     } else if (uses_fmm_solver(config.solver)) {
         fmmgalaxy::compute_fmm_accelerations(
