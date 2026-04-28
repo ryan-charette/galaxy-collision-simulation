@@ -42,7 +42,9 @@ SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(conf
 
     diagnostics_stream_
         << "step,time,n,total_mass,kinetic_energy,potential_energy,total_energy,"
-        << "momentum_x,momentum_y,center_of_mass_x,center_of_mass_y,angular_momentum\n";
+        << "momentum_x,momentum_y,momentum_z,"
+        << "center_of_mass_x,center_of_mass_y,center_of_mass_z,"
+        << "angular_momentum_x,angular_momentum_y,angular_momentum_z\n";
 }
 
 void SnapshotWriter::write_metadata(const SimulationConfig& config, std::size_t particle_count) {
@@ -58,6 +60,7 @@ void SnapshotWriter::write_metadata(const SimulationConfig& config, std::size_t 
     metadata << "  \"steps\": " << config.steps << ",\n";
     metadata << "  \"dt\": " << config.dt << ",\n";
     metadata << "  \"snapshot_every\": " << config.snapshot_every << ",\n";
+    metadata << "  \"dim\": " << config.dim << ",\n";
     metadata << "  \"gravitational_constant\": " << config.physics.gravitational_constant << ",\n";
     metadata << "  \"softening\": " << config.physics.softening << ",\n";
     metadata << "  \"tree_theta\": " << config.tree_theta << ",\n";
@@ -74,7 +77,7 @@ void SnapshotWriter::write_snapshot(int step, double time, const std::vector<Par
 
     output << std::setprecision(17);
     output << "# time=" << time << "\n";
-    output << "id,group_id,mass,x,y,vx,vy,ax,ay\n";
+    output << "id,group_id,mass,x,y,z,vx,vy,vz,ax,ay,az\n";
     for (std::size_t i = 0; i < particles.size(); ++i) {
         const auto& particle = particles[i];
         output << i << ','
@@ -82,10 +85,13 @@ void SnapshotWriter::write_snapshot(int step, double time, const std::vector<Par
                << particle.mass << ','
                << particle.position.x << ','
                << particle.position.y << ','
+               << particle.position.z << ','
                << particle.velocity.x << ','
                << particle.velocity.y << ','
+               << particle.velocity.z << ','
                << particle.acceleration.x << ','
-               << particle.acceleration.y << '\n';
+               << particle.acceleration.y << ','
+               << particle.acceleration.z << '\n';
     }
 }
 
@@ -105,9 +111,13 @@ void SnapshotWriter::write_diagnostics(
                         << diagnostics.total_energy << ','
                         << diagnostics.momentum.x << ','
                         << diagnostics.momentum.y << ','
+                        << diagnostics.momentum.z << ','
                         << diagnostics.center_of_mass.x << ','
                         << diagnostics.center_of_mass.y << ','
-                        << diagnostics.angular_momentum << '\n';
+                        << diagnostics.center_of_mass.z << ','
+                        << diagnostics.angular_momentum.x << ','
+                        << diagnostics.angular_momentum.y << ','
+                        << diagnostics.angular_momentum.z << '\n';
 }
 
 }  // namespace fmmgalaxy
