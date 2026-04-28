@@ -14,7 +14,7 @@ struct FmmOptions {
     double theta{0.6};
     std::size_t leaf_capacity{16};
     int max_depth{32};
-    int expansion_order{2};
+    int expansion_order{4};
 };
 
 struct FmmStats {
@@ -39,7 +39,7 @@ private:
         double half_width{1.0};
         double mass{0.0};
         Vec2 center_of_mass{};
-        Quadrupole quadrupole{};
+        CartesianMoments moments{};
         std::array<int, 8> children{{-1, -1, -1, -1, -1, -1, -1, -1}};
         std::vector<std::size_t> particle_indices{};
         std::vector<int> far_nodes{};
@@ -57,7 +57,7 @@ private:
     void insert_particle(int node_index, std::size_t particle_index, int depth);
     void subdivide(int node_index);
     double p2m_m2m(int node_index);
-    void compute_quadrupoles(int node_index);
+    void compute_multipole_moments(int node_index);
     void collect_leaves(int node_index);
     void build_interaction_lists();
     void build_leaf_interactions(int target_leaf_index, int source_node_index);
