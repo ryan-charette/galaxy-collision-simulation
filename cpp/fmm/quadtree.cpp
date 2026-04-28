@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 
 namespace fmmgalaxy {
@@ -12,12 +13,14 @@ BarnesHutSolver::BarnesHutSolver(
     PhysicsParams params,
     double theta,
     std::size_t leaf_capacity,
-    int max_depth
+    int max_depth,
+    int expansion_order
 )
     : params_(params),
       theta_(theta),
       leaf_capacity_(std::max<std::size_t>(1, leaf_capacity)),
-      max_depth_(std::max(1, max_depth)) {}
+      max_depth_(std::max(1, max_depth)),
+      expansion_order_(std::max(0, expansion_order)) {}
 
 void BarnesHutSolver::compute(std::vector<Particle>& particles) {
     reset_accelerations(particles);
@@ -40,8 +43,10 @@ void BarnesHutSolver::build(const std::vector<Particle>& particles) {
     Vec2 min_position{
         std::numeric_limits<double>::infinity(),
         std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::infinity(),
     };
     Vec2 max_position{
+        -std::numeric_limits<double>::infinity(),
         -std::numeric_limits<double>::infinity(),
         -std::numeric_limits<double>::infinity(),
     };
@@ -49,13 +54,19 @@ void BarnesHutSolver::build(const std::vector<Particle>& particles) {
     for (const auto& particle : particles) {
         min_position.x = std::min(min_position.x, particle.position.x);
         min_position.y = std::min(min_position.y, particle.position.y);
+        min_position.z = std::min(min_position.z, particle.position.z);
         max_position.x = std::max(max_position.x, particle.position.x);
         max_position.y = std::max(max_position.y, particle.position.y);
+        max_position.z = std::max(max_position.z, particle.position.z);
     }
 
     Node root;
     root.center = (min_position + max_position) * 0.5;
-    root.half_width = 0.5 * std::max(max_position.x - min_position.x, max_position.y - min_position.y);
+    root.half_width = 0.5 * std::max({
+        max_position.x - min_position.x,
+        max_position.y - min_position.y,
+        max_position.z - min_position.z,
+    });
     root.half_width = std::max(root.half_width, params_.softening + 1.0e-6);
     root.half_width *= 1.0001;
     nodes_.push_back(root);
@@ -65,6 +76,7 @@ void BarnesHutSolver::build(const std::vector<Particle>& particles) {
     }
 
     compute_moments(0);
+    compute_quadrupoles(0);
 }
 
 bool BarnesHutSolver::is_leaf(const Node& node) const {
@@ -73,27 +85,31 @@ bool BarnesHutSolver::is_leaf(const Node& node) const {
 
 bool BarnesHutSolver::contains(const Node& node, const Vec2& position) const {
     return std::abs(position.x - node.center.x) <= node.half_width &&
-           std::abs(position.y - node.center.y) <= node.half_width;
+           std::abs(position.y - node.center.y) <= node.half_width &&
+           std::abs(position.z - node.center.z) <= node.half_width;
 }
 
 int BarnesHutSolver::child_index_for(const Node& node, const Vec2& position) const {
     const int east = position.x >= node.center.x ? 1 : 0;
     const int north = position.y >= node.center.y ? 1 : 0;
-    return east + 2 * north;
+    const int up = position.z >= node.center.z ? 1 : 0;
+    return east + 2 * north + 4 * up;
 }
 
 void BarnesHutSolver::subdivide(int node_index) {
     const Node node = nodes_[static_cast<std::size_t>(node_index)];
     const double child_half_width = node.half_width * 0.5;
 
-    for (int child = 0; child < 4; ++child) {
+    for (int child = 0; child < 8; ++child) {
         const double x_sign = (child & 1) ? 1.0 : -1.0;
         const double y_sign = (child & 2) ? 1.0 : -1.0;
+        const double z_sign = (child & 4) ? 1.0 : -1.0;
 
         Node child_node;
         child_node.center = {
             node.center.x + x_sign * child_half_width,
             node.center.y + y_sign * child_half_width,
+            node.center.z + z_sign * child_half_width,
         };
         child_node.half_width = child_half_width;
         nodes_.push_back(child_node);
@@ -153,6 +169,32 @@ double BarnesHutSolver::compute_moments(int node_index) {
     return mass;
 }
 
+void BarnesHutSolver::compute_quadrupoles(int node_index) {
+    Node& node = nodes_[static_cast<std::size_t>(node_index)];
+    node.quadrupole = zero_quadrupole();
+
+    if (is_leaf(node)) {
+        for (const std::size_t particle_index : node.particle_indices) {
+            const Particle& particle = (*particles_)[particle_index];
+            add_quadrupole_point(node.quadrupole, particle.position - node.center_of_mass, particle.mass);
+        }
+        return;
+    }
+
+    for (const int child_index : node.children) {
+        if (child_index >= 0) {
+            compute_quadrupoles(child_index);
+            const Node& child = nodes_[static_cast<std::size_t>(child_index)];
+            add_quadrupole_shifted_child(
+                node.quadrupole,
+                child.quadrupole,
+                child.center_of_mass - node.center_of_mass,
+                child.mass
+            );
+        }
+    }
+}
+
 Vec2 BarnesHutSolver::accumulate_from_node(
     int node_index,
     std::size_t target_index,
@@ -181,7 +223,14 @@ Vec2 BarnesHutSolver::accumulate_from_node(
     const bool target_inside_node = contains(node, target_position);
 
     if (!target_inside_node && distance > 0.0 && node_width / distance < theta_) {
-        return softened_acceleration(target_position, node.center_of_mass, node.mass, params_);
+        return multipole_acceleration(
+            target_position,
+            node.center_of_mass,
+            node.mass,
+            node.quadrupole,
+            params_,
+            expansion_order_
+        );
     }
 
     Vec2 acceleration{};
@@ -197,9 +246,10 @@ void compute_tree_accelerations(
     std::vector<Particle>& particles,
     const PhysicsParams& params,
     double theta,
-    std::size_t leaf_capacity
+    std::size_t leaf_capacity,
+    int expansion_order
 ) {
-    BarnesHutSolver solver(params, theta, leaf_capacity);
+    BarnesHutSolver solver(params, theta, leaf_capacity, 32, expansion_order);
     solver.compute(particles);
 }
 
