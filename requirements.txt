@@ -1,0 +1,11 @@
+numpy>=1.26
+scipy>=1.11
+matplotlib>=3.8
+h5py>=3.10
+pandas>=2.1
+tqdm>=4.66
+moviepy>=1.0
+imageio>=2.33
+imageio-ffmpeg>=0.4
+pyyaml>=6.0
+tomli>=2.0; python_version < "3.11"
