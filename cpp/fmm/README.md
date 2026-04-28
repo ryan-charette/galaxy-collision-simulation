@@ -1,12 +1,12 @@
 # FMM Solver
 
-This module contains both the earlier Barnes-Hut treecode and a monopole FMM solver. The FMM is intentionally low order (`p=0`) today, but it uses the explicit pass structure needed for later high-order expansions.
+This module contains both the Barnes-Hut treecode and a 3D octree FMM solver. The FMM supports monopole (`p=0`) and quadrupole (`p=2`) far-field coefficients.
 
 Implemented:
 
-- quadtree node storage,
+- octree node storage,
 - tree construction,
-- P2M/M2M mass and center-of-mass upward aggregation,
+- P2M/M2M mass, center-of-mass, and quadrupole upward aggregation,
 - M2L-style far-cell interaction lists,
 - P2P direct near-field leaf interactions,
 - target-range evaluation for MPI-owned particles,
@@ -15,5 +15,5 @@ Implemented:
 
 Roadmap:
 
-- high-order P2M/M2M/M2L/L2L/L2P coefficients,
+- orders above quadrupole,
 - runtime/error benchmark plots.
