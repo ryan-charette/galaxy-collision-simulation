@@ -9,10 +9,20 @@ namespace {
 
 constexpr double pi = 3.141592653589793238462643383279502884;
 
-Vec2 rotate(const Vec2& v, double angle) {
+Vec2 rotate_z(const Vec2& v, double angle) {
     const double c = std::cos(angle);
     const double s = std::sin(angle);
-    return {c * v.x - s * v.y, s * v.x + c * v.y};
+    return {c * v.x - s * v.y, s * v.x + c * v.y, v.z};
+}
+
+Vec2 rotate_x(const Vec2& v, double angle) {
+    const double c = std::cos(angle);
+    const double s = std::sin(angle);
+    return {v.x, c * v.y - s * v.z, s * v.y + c * v.z};
+}
+
+Vec2 orient_disk_vector(const Vec2& v, double orientation, double inclination) {
+    return rotate_z(rotate_x(v, inclination), orientation);
 }
 
 double sample_truncated_exponential_radius(double radius, std::uniform_real_distribution<double>& unit, std::mt19937_64& rng) {
@@ -47,8 +57,12 @@ std::vector<Particle> generate_disk_galaxy(
         const double radius = sample_truncated_exponential_radius(config.radius, unit, rng);
         const double theta = 2.0 * pi * unit(rng);
 
-        const Vec2 local_position{radius * std::cos(theta), radius * std::sin(theta)};
-        const Vec2 tangent{-std::sin(theta), std::cos(theta)};
+        const Vec2 local_position{
+            radius * std::cos(theta),
+            radius * std::sin(theta),
+            config.thickness > 0.0 ? config.thickness * normal(rng) : 0.0,
+        };
+        const Vec2 tangent{-std::sin(theta), std::cos(theta), 0.0};
 
         const double enclosed_fraction = std::min(1.0, (radius * radius) / (config.radius * config.radius));
         const double enclosed_mass = std::max(config.mass * enclosed_fraction, particle_mass);
@@ -58,11 +72,17 @@ std::vector<Particle> generate_disk_galaxy(
                       std::pow(softened_r2, 1.5));
 
         Vec2 local_velocity = tangent * circular_speed;
-        local_velocity += {dispersion * normal(rng), dispersion * normal(rng)};
+        local_velocity += {
+            dispersion * normal(rng),
+            dispersion * normal(rng),
+            0.25 * dispersion * normal(rng),
+        };
 
         Particle particle;
-        particle.position = config.position + rotate(local_position, config.orientation);
-        particle.velocity = config.velocity + rotate(local_velocity, config.orientation);
+        particle.position =
+            config.position + orient_disk_vector(local_position, config.orientation, config.inclination);
+        particle.velocity =
+            config.velocity + orient_disk_vector(local_velocity, config.orientation, config.inclination);
         particle.mass = particle_mass;
         particle.group_id = config.group_id;
         particles.push_back(particle);
