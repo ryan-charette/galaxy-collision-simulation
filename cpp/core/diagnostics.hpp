@@ -15,7 +15,7 @@ struct Diagnostics {
     double total_mass{0.0};
     Vec2 momentum{};
     Vec2 center_of_mass{};
-    double angular_momentum{0.0};
+    Vec2 angular_momentum{};
 };
 
 Diagnostics compute_diagnostics(const std::vector<Particle>& particles, const PhysicsParams& params);
