@@ -1,5 +1,6 @@
 #include "direct/direct_solver.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace fmmgalaxy {
@@ -27,6 +28,13 @@ void reset_accelerations(std::vector<Particle>& particles) {
     }
 }
 
+void reset_accelerations(std::vector<Particle>& particles, std::size_t begin, std::size_t end) {
+    end = std::min(end, particles.size());
+    for (std::size_t i = begin; i < end; ++i) {
+        particles[i].acceleration = {};
+    }
+}
+
 void compute_direct_accelerations(std::vector<Particle>& particles, const PhysicsParams& params) {
     reset_accelerations(particles);
 
@@ -45,6 +53,32 @@ void compute_direct_accelerations(std::vector<Particle>& particles, const Physic
             particles[i].acceleration += delta * (scale * particles[j].mass);
             particles[j].acceleration -= delta * (scale * particles[i].mass);
         }
+    }
+}
+
+void compute_direct_accelerations_for_targets(
+    std::vector<Particle>& particles,
+    const PhysicsParams& params,
+    std::size_t begin,
+    std::size_t end
+) {
+    end = std::min(end, particles.size());
+    reset_accelerations(particles, begin, end);
+
+    for (std::size_t i = begin; i < end; ++i) {
+        Vec2 acceleration{};
+        for (std::size_t j = 0; j < particles.size(); ++j) {
+            if (i == j) {
+                continue;
+            }
+            acceleration += softened_acceleration(
+                particles[i].position,
+                particles[j].position,
+                particles[j].mass,
+                params
+            );
+        }
+        particles[i].acceleration = acceleration;
     }
 }
 
