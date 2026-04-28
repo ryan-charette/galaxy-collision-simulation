@@ -50,9 +50,14 @@ def load_snapshot(path: str | Path) -> Snapshot:
     if data.shape == ():
         data = np.array([data], dtype=data.dtype)
 
-    positions = np.column_stack([data["x"], data["y"]])
-    velocities = np.column_stack([data["vx"], data["vy"]])
-    accelerations = np.column_stack([data["ax"], data["ay"]])
+    names = data.dtype.names or ()
+    z = data["z"] if "z" in names else np.zeros_like(data["x"])
+    vz = data["vz"] if "vz" in names else np.zeros_like(data["vx"])
+    az = data["az"] if "az" in names else np.zeros_like(data["ax"])
+
+    positions = np.column_stack([data["x"], data["y"], z])
+    velocities = np.column_stack([data["vx"], data["vy"], vz])
+    accelerations = np.column_stack([data["ax"], data["ay"], az])
 
     return Snapshot(
         step=_step_from_name(path),
@@ -101,7 +106,7 @@ def load_placeholder_snapshot(path: str | Path) -> Snapshot:
     _ = Path(path)
     theta = np.linspace(0.0, 2.0 * np.pi, 512, endpoint=False)
     r = 0.2 + 0.8 * np.sqrt(np.linspace(0.0, 1.0, 512))
-    positions = np.column_stack([r * np.cos(theta), r * np.sin(theta)])
+    positions = np.column_stack([r * np.cos(theta), r * np.sin(theta), np.zeros_like(theta)])
     zeros = np.zeros_like(positions)
     return Snapshot(
         step=0,
