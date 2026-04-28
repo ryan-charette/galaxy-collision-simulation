@@ -1,0 +1,41 @@
+# Build outputs
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+*.exe
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Simulation outputs
+*.h5
+*.hdf5
+*.bin
+*.mp4
+*.gif
+*.png
+snapshot_*.csv
+diagnostics.csv
+metadata.json
+experiments/**/outputs/
+experiments/**/snapshots/
+experiments/**/snapshot_*.csv
+experiments/**/diagnostics.csv
+experiments/**/metadata.json
+test_output/
+test_config.toml
+tmp*/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
