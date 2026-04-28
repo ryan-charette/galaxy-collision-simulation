@@ -59,12 +59,12 @@ std::vector<double> parse_number_array(std::string value) {
     return numbers;
 }
 
-Vec2 parse_vec2(const std::string& value) {
+Vec2 parse_vec3(const std::string& value) {
     const auto numbers = parse_number_array(value);
-    if (numbers.size() != 2) {
-        throw std::runtime_error("Expected [x, y] vector value, got: " + value);
+    if (numbers.size() != 2 && numbers.size() != 3) {
+        throw std::runtime_error("Expected [x, y] or [x, y, z] vector value, got: " + value);
     }
-    return {numbers[0], numbers[1]};
+    return {numbers[0], numbers[1], numbers.size() == 3 ? numbers[2] : 0.0};
 }
 
 std::string lowercase(std::string value) {
@@ -79,6 +79,8 @@ void set_simulation_value(SimulationConfig& config, const std::string& key, cons
         config.name = unquote(value);
     } else if (key == "solver") {
         config.solver = lowercase(unquote(value));
+    } else if (key == "dim" || key == "dimension") {
+        config.dim = std::stoi(value);
     } else if (key == "seed") {
         config.seed = static_cast<std::uint64_t>(std::stoull(value));
     } else if (key == "n_particles") {
@@ -122,13 +124,17 @@ void set_galaxy_value(GalaxyConfig& galaxy, const std::string& key, const std::s
     } else if (key == "radius") {
         galaxy.radius = std::stod(value);
     } else if (key == "position") {
-        galaxy.position = parse_vec2(value);
+        galaxy.position = parse_vec3(value);
     } else if (key == "velocity") {
-        galaxy.velocity = parse_vec2(value);
+        galaxy.velocity = parse_vec3(value);
     } else if (key == "orientation") {
         galaxy.orientation = std::stod(value);
     } else if (key == "group_id") {
         galaxy.group_id = static_cast<std::uint32_t>(std::stoul(value));
+    } else if (key == "thickness") {
+        galaxy.thickness = std::stod(value);
+    } else if (key == "inclination") {
+        galaxy.inclination = std::stod(value);
     }
 }
 
@@ -137,8 +143,8 @@ void set_galaxy_value(GalaxyConfig& galaxy, const std::string& key, const std::s
 SimulationConfig default_config() {
     SimulationConfig config;
     config.galaxies = {
-        GalaxyConfig{128, 1.0, 1.0, {-0.8, 0.0}, {0.15, 0.0}, 0.0, 0},
-        GalaxyConfig{128, 1.0, 1.0, {0.8, 0.0}, {-0.15, 0.0}, 3.141592653589793, 1},
+        GalaxyConfig{128, 1.0, 1.0, {-0.8, 0.0, 0.0}, {0.15, 0.0, 0.0}, 0.0, 0, 0.03, 0.15},
+        GalaxyConfig{128, 1.0, 1.0, {0.8, 0.0, 0.0}, {-0.15, 0.0, 0.0}, 3.141592653589793, 1, 0.03, -0.15},
     };
     config.n_particles = 256;
     return config;
@@ -206,6 +212,25 @@ SimulationConfig load_config(const std::filesystem::path& path) {
 
     if (config.galaxies.empty()) {
         config = default_config();
+    }
+
+    if (config.dim != 2 && config.dim != 3) {
+        throw std::runtime_error("dim must be 2 or 3");
+    }
+
+    if (config.dim == 3) {
+        for (auto& galaxy : config.galaxies) {
+            if (galaxy.thickness <= 0.0) {
+                galaxy.thickness = 0.03 * galaxy.radius;
+            }
+        }
+    } else {
+        for (auto& galaxy : config.galaxies) {
+            galaxy.position.z = 0.0;
+            galaxy.velocity.z = 0.0;
+            galaxy.thickness = 0.0;
+            galaxy.inclination = 0.0;
+        }
     }
 
     if (config.snapshot_every <= 0) {
