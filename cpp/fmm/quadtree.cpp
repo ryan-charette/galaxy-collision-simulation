@@ -20,7 +20,7 @@ BarnesHutSolver::BarnesHutSolver(
       theta_(theta),
       leaf_capacity_(std::max<std::size_t>(1, leaf_capacity)),
       max_depth_(std::max(1, max_depth)),
-      expansion_order_(std::max(0, expansion_order)) {}
+      expansion_order_(std::clamp(expansion_order, 0, 4)) {}
 
 void BarnesHutSolver::compute(std::vector<Particle>& particles) {
     reset_accelerations(particles);
@@ -76,7 +76,7 @@ void BarnesHutSolver::build(const std::vector<Particle>& particles) {
     }
 
     compute_moments(0);
-    compute_quadrupoles(0);
+    compute_multipole_moments(0);
 }
 
 bool BarnesHutSolver::is_leaf(const Node& node) const {
@@ -169,25 +169,25 @@ double BarnesHutSolver::compute_moments(int node_index) {
     return mass;
 }
 
-void BarnesHutSolver::compute_quadrupoles(int node_index) {
+void BarnesHutSolver::compute_multipole_moments(int node_index) {
     Node& node = nodes_[static_cast<std::size_t>(node_index)];
-    node.quadrupole = zero_quadrupole();
+    node.moments = zero_multipole_moments();
 
     if (is_leaf(node)) {
         for (const std::size_t particle_index : node.particle_indices) {
             const Particle& particle = (*particles_)[particle_index];
-            add_quadrupole_point(node.quadrupole, particle.position - node.center_of_mass, particle.mass);
+            add_multipole_point(node.moments, particle.position - node.center_of_mass, particle.mass);
         }
         return;
     }
 
     for (const int child_index : node.children) {
         if (child_index >= 0) {
-            compute_quadrupoles(child_index);
+            compute_multipole_moments(child_index);
             const Node& child = nodes_[static_cast<std::size_t>(child_index)];
-            add_quadrupole_shifted_child(
-                node.quadrupole,
-                child.quadrupole,
+            add_multipole_shifted_child(
+                node.moments,
+                child.moments,
                 child.center_of_mass - node.center_of_mass,
                 child.mass
             );
@@ -227,7 +227,7 @@ Vec2 BarnesHutSolver::accumulate_from_node(
             target_position,
             node.center_of_mass,
             node.mass,
-            node.quadrupole,
+            node.moments,
             params_,
             expansion_order_
         );
