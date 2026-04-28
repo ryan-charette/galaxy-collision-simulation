@@ -64,7 +64,8 @@ bool uses_tree_solver(const std::string& solver) {
 }
 
 bool uses_fmm_solver(const std::string& solver) {
-    return solver == "fmm" || solver == "monopole-fmm" || solver == "quadrupole-fmm";
+    return solver == "fmm" || solver == "monopole-fmm" || solver == "quadrupole-fmm" ||
+           solver == "p4-fmm" || solver == "cartesian-fmm";
 }
 
 bool uses_cuda_direct_solver(const std::string& solver) {
