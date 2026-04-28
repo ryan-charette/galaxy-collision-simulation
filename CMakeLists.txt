@@ -54,6 +54,7 @@ add_library(fmm_galaxy_core
     cpp/cuda/cuda_solver_stub.cpp
     cpp/direct/direct_solver.cpp
     cpp/fmm/fmm_solver.cpp
+    cpp/fmm/multipole.cpp
     cpp/fmm/quadtree.cpp
     cpp/io/snapshot_writer.cpp
     cpp/mpi/distributed_solver.cpp
@@ -80,6 +81,7 @@ if(HAVE_CUDA)
             ${CMAKE_CURRENT_SOURCE_DIR}/cpp
             ${CMAKE_CURRENT_BINARY_DIR}/generated
     )
+    target_link_libraries(fmm_galaxy_cuda PUBLIC fmm_galaxy_core)
     target_compile_definitions(fmm_galaxy_cuda PUBLIC FMM_GALAXY_HAVE_CUDA=1)
 endif()
 
