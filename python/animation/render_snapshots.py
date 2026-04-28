@@ -11,7 +11,7 @@ from python.utils.snapshots import iter_group_masks, load_snapshots
 
 
 def _bounds(snapshots) -> tuple[float, float, float, float]:
-    positions = np.vstack([snapshot.positions for snapshot in snapshots])
+    positions = np.vstack([snapshot.positions[:, :2] for snapshot in snapshots])
     xmin, ymin = positions.min(axis=0)
     xmax, ymax = positions.max(axis=0)
     span = max(xmax - xmin, ymax - ymin)
@@ -60,7 +60,7 @@ def main() -> None:
     def update(frame: int):
         snapshot = snapshots[frame]
         for group, mask in iter_group_masks(snapshot.group_id):
-            scatters[group].set_offsets(snapshot.positions[mask])
+            scatters[group].set_offsets(snapshot.positions[mask, :2])
         title.set_text(f"step {snapshot.step}   t={snapshot.time:.3f}")
         return (*scatters.values(), title)
 
