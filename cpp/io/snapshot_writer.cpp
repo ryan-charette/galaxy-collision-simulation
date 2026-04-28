@@ -61,7 +61,8 @@ void SnapshotWriter::write_metadata(const SimulationConfig& config, std::size_t 
     metadata << "  \"gravitational_constant\": " << config.physics.gravitational_constant << ",\n";
     metadata << "  \"softening\": " << config.physics.softening << ",\n";
     metadata << "  \"tree_theta\": " << config.tree_theta << ",\n";
-    metadata << "  \"tree_leaf_capacity\": " << config.tree_leaf_capacity << "\n";
+    metadata << "  \"tree_leaf_capacity\": " << config.tree_leaf_capacity << ",\n";
+    metadata << "  \"fmm_expansion_order\": " << config.fmm_expansion_order << "\n";
     metadata << "}\n";
 }
 
