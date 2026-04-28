@@ -26,6 +26,7 @@ struct SimulationConfig {
     int snapshot_every{10};
     double tree_theta{0.6};
     std::size_t tree_leaf_capacity{16};
+    int fmm_expansion_order{0};
     PhysicsParams physics{};
     std::vector<GalaxyConfig> galaxies{};
     OutputConfig output{};
