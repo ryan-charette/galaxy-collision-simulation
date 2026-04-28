@@ -4,6 +4,7 @@
 #include "core/simulation_params.hpp"
 #include "core/vector2.hpp"
 
+#include <cstddef>
 #include <vector>
 
 namespace fmmgalaxy {
@@ -16,7 +17,14 @@ Vec2 softened_acceleration(
 );
 
 void reset_accelerations(std::vector<Particle>& particles);
+void reset_accelerations(std::vector<Particle>& particles, std::size_t begin, std::size_t end);
 
 void compute_direct_accelerations(std::vector<Particle>& particles, const PhysicsParams& params);
+void compute_direct_accelerations_for_targets(
+    std::vector<Particle>& particles,
+    const PhysicsParams& params,
+    std::size_t begin,
+    std::size_t end
+);
 
 }  // namespace fmmgalaxy
