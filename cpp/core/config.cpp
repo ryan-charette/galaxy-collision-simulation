@@ -93,6 +93,8 @@ void set_simulation_value(SimulationConfig& config, const std::string& key, cons
         config.tree_theta = std::stod(value);
     } else if (key == "leaf_capacity" || key == "tree_leaf_capacity") {
         config.tree_leaf_capacity = static_cast<std::size_t>(std::stoull(value));
+    } else if (key == "expansion_order" || key == "fmm_expansion_order") {
+        config.fmm_expansion_order = std::stoi(value);
     }
 }
 
