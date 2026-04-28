@@ -19,6 +19,7 @@ struct OutputConfig {
 struct SimulationConfig {
     std::string name{"smoke_test"};
     std::string solver{"direct"};
+    int dim{3};
     std::uint64_t seed{42};
     std::size_t n_particles{0};
     int steps{40};
@@ -26,7 +27,7 @@ struct SimulationConfig {
     int snapshot_every{10};
     double tree_theta{0.6};
     std::size_t tree_leaf_capacity{16};
-    int fmm_expansion_order{0};
+    int fmm_expansion_order{2};
     PhysicsParams physics{};
     std::vector<GalaxyConfig> galaxies{};
     OutputConfig output{};
