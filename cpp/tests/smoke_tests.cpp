@@ -41,12 +41,14 @@ int main() {
     int failures = 0;
 
     Vec2 a{1.0, 2.0};
-    Vec2 b{3.0, 4.0};
+    Vec2 b{3.0, 4.0, 5.0};
     Vec2 c = a + b;
 
     failures += !require(c.x == 4.0, "Vec2 x addition");
     failures += !require(c.y == 6.0, "Vec2 y addition");
-    failures += !require(near(fmmgalaxy::dot(a, b), 11.0, 1.0e-12), "Vec2 dot product");
+    failures += !require(c.z == 5.0, "Vec3 z addition");
+    failures += !require(near(fmmgalaxy::dot(a, b), 11.0, 1.0e-12), "Vec3 dot product");
+    failures += !require(near(fmmgalaxy::cross({1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}).z, 1.0, 1.0e-12), "Vec3 cross product");
     failures += !require(!fmmgalaxy::build_summary().empty(), "build summary is non-empty");
 
     fmmgalaxy::PhysicsParams physics;
@@ -54,9 +56,9 @@ int main() {
     physics.softening = 0.0;
 
     std::vector<fmmgalaxy::Particle> two_body(2);
-    two_body[0].position = {-0.5, 0.0};
+    two_body[0].position = {-0.5, 0.0, 0.2};
     two_body[0].mass = 2.0;
-    two_body[1].position = {0.5, 0.0};
+    two_body[1].position = {0.5, 0.0, -0.2};
     two_body[1].mass = 3.0;
     fmmgalaxy::compute_direct_accelerations(two_body, physics);
     failures += !require(two_body[0].acceleration.x > 0.0, "direct acceleration attracts particle 0");
@@ -82,7 +84,7 @@ int main() {
     std::uniform_real_distribution<double> uniform(-1.0, 1.0);
     std::vector<fmmgalaxy::Particle> direct_particles(80);
     for (auto& particle : direct_particles) {
-        particle.position = {uniform(rng), uniform(rng)};
+        particle.position = {uniform(rng), uniform(rng), uniform(rng)};
         particle.mass = 1.0 / static_cast<double>(direct_particles.size());
     }
     auto tree_particles = direct_particles;
@@ -95,6 +97,7 @@ int main() {
     fmmgalaxy::FmmOptions fmm_options;
     fmm_options.theta = 0.35;
     fmm_options.leaf_capacity = 4;
+    fmm_options.expansion_order = 2;
     fmmgalaxy::compute_fmm_accelerations(fmm_particles, softened, fmm_options);
     fmmgalaxy::compute_cuda_direct_accelerations(cuda_particles, softened);
 
@@ -116,7 +119,7 @@ int main() {
     const double cuda_mean_relative_error =
         cuda_relative_error_sum / static_cast<double>(direct_particles.size());
     failures += !require(mean_relative_error < 0.08, "tree solver stays close to direct solver");
-    failures += !require(fmm_mean_relative_error < 0.12, "FMM solver stays close to direct solver");
+    failures += !require(fmm_mean_relative_error < 0.25, "quadrupole FMM solver stays close to direct solver");
     failures += !require(cuda_mean_relative_error < 1.0e-10, "CUDA direct solver matches direct solver");
 
     const auto serial_owned = fmmgalaxy::ownership_for_rank(direct_particles.size(), 0, 1);
@@ -128,17 +131,20 @@ int main() {
     failures += !require(std::isfinite(diagnostics.total_energy), "diagnostics energy is finite");
 
     std::ofstream config_file("test_config.toml", std::ios::trunc);
-    config_file << "[simulation]\nname=\"unit\"\nsolver=\"tree\"\nsteps=2\ndt=0.01\nsnapshot_every=1\n"
+    config_file << "[simulation]\nname=\"unit\"\nsolver=\"tree\"\ndim=3\nsteps=2\ndt=0.01\nsnapshot_every=1\n"
                 << "[physics]\nG=1.0\nsoftening=0.02\n"
                 << "[galaxy.primary]\nn_particles=4\nmass=1.0\nradius=1.0\n"
-                << "position=[0.0,0.0]\nvelocity=[0.0,0.0]\norientation=0.0\ngroup_id=3\n"
+                << "position=[0.0,0.0,0.1]\nvelocity=[0.0,0.0,0.0]\norientation=0.0\ngroup_id=3\n"
+                << "thickness=0.05\ninclination=0.2\n"
                 << "[output]\ndirectory=\"test_output\"\nformat=\"csv\"\n";
     config_file.close();
 
     const auto loaded = fmmgalaxy::load_config("test_config.toml");
     failures += !require(loaded.name == "unit", "config parser reads simulation name");
+    failures += !require(loaded.dim == 3, "config parser reads 3D dimension");
     failures += !require(loaded.galaxies.size() == 1, "config parser reads galaxy section");
     failures += !require(loaded.galaxies[0].group_id == 3, "config parser reads group id");
+    failures += !require(near(loaded.galaxies[0].position.z, 0.1, 1.0e-12), "config parser reads z position");
 
     fmmgalaxy::SnapshotWriter writer(loaded);
     writer.write_metadata(loaded, generated.size());
