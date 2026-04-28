@@ -97,7 +97,7 @@ int main() {
     fmmgalaxy::FmmOptions fmm_options;
     fmm_options.theta = 0.35;
     fmm_options.leaf_capacity = 4;
-    fmm_options.expansion_order = 2;
+    fmm_options.expansion_order = 4;
     fmmgalaxy::compute_fmm_accelerations(fmm_particles, softened, fmm_options);
     fmmgalaxy::compute_cuda_direct_accelerations(cuda_particles, softened);
 
@@ -119,7 +119,7 @@ int main() {
     const double cuda_mean_relative_error =
         cuda_relative_error_sum / static_cast<double>(direct_particles.size());
     failures += !require(mean_relative_error < 0.08, "tree solver stays close to direct solver");
-    failures += !require(fmm_mean_relative_error < 0.25, "quadrupole FMM solver stays close to direct solver");
+    failures += !require(fmm_mean_relative_error < 0.25, "p=4 FMM solver stays close to direct solver");
     failures += !require(cuda_mean_relative_error < 1.0e-10, "CUDA direct solver matches direct solver");
 
     const auto serial_owned = fmmgalaxy::ownership_for_rank(direct_particles.size(), 0, 1);
