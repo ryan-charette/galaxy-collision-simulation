@@ -19,6 +19,8 @@ struct GalaxyConfig {
     Vec2 velocity{};
     double orientation{0.0};
     std::uint32_t group_id{0};
+    double thickness{0.0};
+    double inclination{0.0};
 };
 
 std::vector<Particle> generate_disk_galaxy(
