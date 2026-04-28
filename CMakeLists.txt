@@ -51,9 +51,12 @@ add_library(fmm_galaxy_core
     cpp/core/initial_conditions.cpp
     cpp/core/integrator.cpp
     cpp/core/simulation_info.cpp
+    cpp/cuda/cuda_solver_stub.cpp
     cpp/direct/direct_solver.cpp
+    cpp/fmm/fmm_solver.cpp
     cpp/fmm/quadtree.cpp
     cpp/io/snapshot_writer.cpp
+    cpp/mpi/distributed_solver.cpp
 )
 
 target_include_directories(fmm_galaxy_core
@@ -69,6 +72,7 @@ endif()
 
 if(HAVE_CUDA)
     add_library(fmm_galaxy_cuda STATIC
+        cpp/cuda/cuda_solver.cu
         cpp/cuda/cuda_smoke.cu
     )
     target_include_directories(fmm_galaxy_cuda
@@ -92,6 +96,7 @@ add_executable(fmm_galaxy_smoke
 target_link_libraries(fmm_galaxy_smoke PRIVATE fmm_galaxy_core)
 
 if(HAVE_CUDA)
+    target_link_libraries(fmm_galaxy_sim PRIVATE fmm_galaxy_cuda)
     target_link_libraries(fmm_galaxy_smoke PRIVATE fmm_galaxy_cuda)
 endif()
 
@@ -101,6 +106,9 @@ if(BUILD_TESTING)
         cpp/tests/smoke_tests.cpp
     )
     target_link_libraries(fmm_galaxy_tests PRIVATE fmm_galaxy_core)
+    if(HAVE_CUDA)
+        target_link_libraries(fmm_galaxy_tests PRIVATE fmm_galaxy_cuda)
+    endif()
     add_test(NAME smoke_tests COMMAND fmm_galaxy_tests)
 endif()
 
