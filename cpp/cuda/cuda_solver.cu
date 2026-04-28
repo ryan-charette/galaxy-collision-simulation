@@ -1,5 +1,8 @@
 #include "cuda/cuda_solver.hpp"
 
+#include "core/integrator.hpp"
+#include "direct/direct_solver.hpp"
+
 #include <cuda_runtime.h>
 
 #include <cstddef>
@@ -14,10 +17,13 @@ namespace {
 struct DeviceParticle {
     double x;
     double y;
+    double z;
     double vx;
     double vy;
+    double vz;
     double ax;
     double ay;
+    double az;
     double mass;
     unsigned int group_id;
 };
@@ -26,19 +32,22 @@ DeviceParticle pack_particle(const Particle& particle) {
     return DeviceParticle{
         particle.position.x,
         particle.position.y,
+        particle.position.z,
         particle.velocity.x,
         particle.velocity.y,
+        particle.velocity.z,
         particle.acceleration.x,
         particle.acceleration.y,
+        particle.acceleration.z,
         particle.mass,
         particle.group_id,
     };
 }
 
 void unpack_particle(const DeviceParticle& device_particle, Particle& particle) {
-    particle.position = {device_particle.x, device_particle.y};
-    particle.velocity = {device_particle.vx, device_particle.vy};
-    particle.acceleration = {device_particle.ax, device_particle.ay};
+    particle.position = {device_particle.x, device_particle.y, device_particle.z};
+    particle.velocity = {device_particle.vx, device_particle.vy, device_particle.vz};
+    particle.acceleration = {device_particle.ax, device_particle.ay, device_particle.az};
     particle.mass = device_particle.mass;
     particle.group_id = device_particle.group_id;
 }
@@ -64,9 +73,11 @@ __global__ void direct_acceleration_kernel(
 
     const double xi = particles[i].x;
     const double yi = particles[i].y;
+    const double zi = particles[i].z;
     const double eps2 = softening * softening;
     double ax = 0.0;
     double ay = 0.0;
+    double az = 0.0;
 
     for (int j = 0; j < count; ++j) {
         if (i == j) {
@@ -75,7 +86,8 @@ __global__ void direct_acceleration_kernel(
 
         const double dx = particles[j].x - xi;
         const double dy = particles[j].y - yi;
-        const double s2 = dx * dx + dy * dy + eps2;
+        const double dz = particles[j].z - zi;
+        const double s2 = dx * dx + dy * dy + dz * dz + eps2;
         if (s2 == 0.0) {
             continue;
         }
@@ -85,10 +97,12 @@ __global__ void direct_acceleration_kernel(
         const double scale = gravitational_constant * particles[j].mass * inv_r3;
         ax += dx * scale;
         ay += dy * scale;
+        az += dz * scale;
     }
 
     particles[i].ax = ax;
     particles[i].ay = ay;
+    particles[i].az = az;
 }
 
 __global__ void drift_kernel(DeviceParticle* particles, int count, double dt) {
@@ -99,6 +113,7 @@ __global__ void drift_kernel(DeviceParticle* particles, int count, double dt) {
 
     particles[i].x += particles[i].vx * dt;
     particles[i].y += particles[i].vy * dt;
+    particles[i].z += particles[i].vz * dt;
 }
 
 __global__ void kick_kernel(DeviceParticle* particles, int count, double dt) {
@@ -109,6 +124,7 @@ __global__ void kick_kernel(DeviceParticle* particles, int count, double dt) {
 
     particles[i].vx += particles[i].ax * dt;
     particles[i].vy += particles[i].ay * dt;
+    particles[i].vz += particles[i].az * dt;
 }
 
 void copy_back(DeviceParticle* device_particles, std::vector<Particle>& particles) {
@@ -176,6 +192,10 @@ void compute_cuda_direct_accelerations(std::vector<Particle>& particles, const P
     if (particles.empty()) {
         return;
     }
+    if (!cuda_solver_available()) {
+        compute_direct_accelerations(particles, params);
+        return;
+    }
 
     DeviceParticle* device_particles = copy_to_device(particles);
     try {
@@ -191,6 +211,13 @@ void compute_cuda_direct_accelerations(std::vector<Particle>& particles, const P
 
 void cuda_direct_leapfrog_step(std::vector<Particle>& particles, double dt, const PhysicsParams& params) {
     if (particles.empty()) {
+        return;
+    }
+    if (!cuda_solver_available()) {
+        auto compute = [&params](std::vector<Particle>& state) {
+            compute_direct_accelerations(state, params);
+        };
+        leapfrog_step(particles, dt, compute);
         return;
     }
 
