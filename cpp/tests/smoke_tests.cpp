@@ -4,9 +4,12 @@
 #include "core/initial_conditions.hpp"
 #include "core/integrator.hpp"
 #include "core/vector2.hpp"
+#include "cuda/cuda_solver.hpp"
 #include "direct/direct_solver.hpp"
+#include "fmm/fmm_solver.hpp"
 #include "fmm/quadtree.hpp"
 #include "io/snapshot_writer.hpp"
+#include "mpi/distributed_solver.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -83,19 +86,42 @@ int main() {
         particle.mass = 1.0 / static_cast<double>(direct_particles.size());
     }
     auto tree_particles = direct_particles;
+    auto fmm_particles = direct_particles;
+    auto cuda_particles = direct_particles;
     fmmgalaxy::PhysicsParams softened;
     softened.softening = 0.03;
     fmmgalaxy::compute_direct_accelerations(direct_particles, softened);
     fmmgalaxy::compute_tree_accelerations(tree_particles, softened, 0.25, 4);
+    fmmgalaxy::FmmOptions fmm_options;
+    fmm_options.theta = 0.35;
+    fmm_options.leaf_capacity = 4;
+    fmmgalaxy::compute_fmm_accelerations(fmm_particles, softened, fmm_options);
+    fmmgalaxy::compute_cuda_direct_accelerations(cuda_particles, softened);
 
     double relative_error_sum = 0.0;
+    double fmm_relative_error_sum = 0.0;
+    double cuda_relative_error_sum = 0.0;
     for (std::size_t i = 0; i < direct_particles.size(); ++i) {
         const Vec2 diff = tree_particles[i].acceleration - direct_particles[i].acceleration;
+        const Vec2 fmm_diff = fmm_particles[i].acceleration - direct_particles[i].acceleration;
+        const Vec2 cuda_diff = cuda_particles[i].acceleration - direct_particles[i].acceleration;
         const double denom = std::max(fmmgalaxy::norm(direct_particles[i].acceleration), 1.0e-12);
         relative_error_sum += fmmgalaxy::norm(diff) / denom;
+        fmm_relative_error_sum += fmmgalaxy::norm(fmm_diff) / denom;
+        cuda_relative_error_sum += fmmgalaxy::norm(cuda_diff) / denom;
     }
     const double mean_relative_error = relative_error_sum / static_cast<double>(direct_particles.size());
+    const double fmm_mean_relative_error =
+        fmm_relative_error_sum / static_cast<double>(direct_particles.size());
+    const double cuda_mean_relative_error =
+        cuda_relative_error_sum / static_cast<double>(direct_particles.size());
     failures += !require(mean_relative_error < 0.08, "tree solver stays close to direct solver");
+    failures += !require(fmm_mean_relative_error < 0.12, "FMM solver stays close to direct solver");
+    failures += !require(cuda_mean_relative_error < 1.0e-10, "CUDA direct solver matches direct solver");
+
+    const auto serial_owned = fmmgalaxy::ownership_for_rank(direct_particles.size(), 0, 1);
+    failures += !require(serial_owned.begin == 0, "MPI serial ownership starts at zero");
+    failures += !require(serial_owned.end == direct_particles.size(), "MPI serial ownership owns all particles");
 
     const auto diagnostics = fmmgalaxy::compute_diagnostics(direct_particles, softened);
     failures += !require(diagnostics.total_mass > 0.0, "diagnostics compute total mass");
