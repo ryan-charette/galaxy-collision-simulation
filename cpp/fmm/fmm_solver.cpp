@@ -14,7 +14,7 @@ FastMultipoleSolver::FastMultipoleSolver(PhysicsParams params, FmmOptions option
     options_.leaf_capacity = std::max<std::size_t>(1, options_.leaf_capacity);
     options_.max_depth = std::max(1, options_.max_depth);
     options_.theta = std::max(1.0e-6, options_.theta);
-    options_.expansion_order = std::max(0, options_.expansion_order);
+    options_.expansion_order = std::clamp(options_.expansion_order, 0, 4);
 }
 
 void FastMultipoleSolver::compute(std::vector<Particle>& particles) {
@@ -89,7 +89,7 @@ void FastMultipoleSolver::build(const std::vector<Particle>& particles) {
     }
 
     p2m_m2m(0);
-    compute_quadrupoles(0);
+    compute_multipole_moments(0);
     collect_leaves(0);
     build_interaction_lists();
 
@@ -181,25 +181,25 @@ double FastMultipoleSolver::p2m_m2m(int node_index) {
     return mass;
 }
 
-void FastMultipoleSolver::compute_quadrupoles(int node_index) {
+void FastMultipoleSolver::compute_multipole_moments(int node_index) {
     Node& node = nodes_[static_cast<std::size_t>(node_index)];
-    node.quadrupole = zero_quadrupole();
+    node.moments = zero_multipole_moments();
 
     if (is_leaf(node)) {
         for (const std::size_t particle_index : node.particle_indices) {
             const Particle& particle = (*particles_)[particle_index];
-            add_quadrupole_point(node.quadrupole, particle.position - node.center_of_mass, particle.mass);
+            add_multipole_point(node.moments, particle.position - node.center_of_mass, particle.mass);
         }
         return;
     }
 
     for (const int child_index : node.children) {
         if (child_index >= 0) {
-            compute_quadrupoles(child_index);
+            compute_multipole_moments(child_index);
             const Node& child = nodes_[static_cast<std::size_t>(child_index)];
-            add_quadrupole_shifted_child(
-                node.quadrupole,
-                child.quadrupole,
+            add_multipole_shifted_child(
+                node.moments,
+                child.moments,
                 child.center_of_mass - node.center_of_mass,
                 child.mass
             );
@@ -286,7 +286,7 @@ Vec2 FastMultipoleSolver::evaluate_particle(std::size_t target_index, const Node
             target.position,
             source.center_of_mass,
             source.mass,
-            source.quadrupole,
+            source.moments,
             params_,
             options_.expansion_order
         );
