@@ -144,7 +144,3 @@ Create a self-contained interactive browser viewer:
 ```bash
 python -m python.animation.interactive_viewer --input experiments/validation/smoke_test --output viewer.html
 ```
-
-## Current Scope
-
-This is now a distributed/GPU-capable 3D MVP. The FMM supports monopole (`p=0`), quadrupole (`p=2`), and fourth-order Cartesian (`p=4`) moments; orders above `p=4` are intentionally out of scope for this project.
