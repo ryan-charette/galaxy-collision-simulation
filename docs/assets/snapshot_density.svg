@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 440" role="img" aria-labelledby="title desc">
+  <title id="title">Density projection snapshot</title>
+  <desc id="desc">Representative density projection of a galaxy collision snapshot with two bright cores and diffuse tidal debris.</desc>
+  <defs>
+    <radialGradient id="blue-core" cx="50%" cy="50%" r="55%">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.18" stop-color="#7dd3fc"/>
+      <stop offset="0.46" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#0f172a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="amber-core" cx="50%" cy="50%" r="55%">
+      <stop offset="0" stop-color="#fff7ed"/>
+      <stop offset="0.2" stop-color="#facc15"/>
+      <stop offset="0.48" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#0f172a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="tail" cx="50%" cy="50%" r="60%">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="720" height="440" fill="#f8fafc"/>
+  <rect x="68" y="44" width="606" height="328" fill="#111827" stroke="#cbd5e1"/>
+  <g opacity="0.6" stroke="#1f2937" stroke-width="1">
+    <path d="M68 290H674M68 208H674M68 126H674"/>
+    <path d="M169 44V372M270 44V372M371 44V372M472 44V372M573 44V372"/>
+  </g>
+  <ellipse cx="254" cy="218" rx="128" ry="58" fill="url(#tail)" transform="rotate(-18 254 218)" opacity="0.65"/>
+  <ellipse cx="438" cy="238" rx="154" ry="52" fill="#f59e0b" opacity="0.12" transform="rotate(11 438 238)"/>
+  <ellipse cx="376" cy="202" rx="226" ry="24" fill="#93c5fd" opacity="0.13" transform="rotate(-28 376 202)"/>
+  <ellipse cx="441" cy="249" rx="232" ry="22" fill="#fdba74" opacity="0.15" transform="rotate(18 441 249)"/>
+  <ellipse cx="253" cy="219" rx="88" ry="66" fill="url(#blue-core)" opacity="0.96"/>
+  <ellipse cx="445" cy="237" rx="92" ry="67" fill="url(#amber-core)" opacity="0.94"/>
+  <g fill="none" stroke-linecap="round" opacity="0.5">
+    <path d="M134 242C216 210 284 205 347 221C418 239 482 218 594 163" stroke="#60a5fa" stroke-width="2"/>
+    <path d="M201 268C290 239 366 245 433 265C512 290 583 281 642 246" stroke="#fbbf24" stroke-width="2"/>
+    <path d="M112 192C174 209 230 204 290 177C349 151 407 150 470 171" stroke="#7dd3fc" stroke-width="1.5"/>
+  </g>
+  <g fill="#e2e8f0" font-family="Arial, sans-serif" font-size="14">
+    <text x="330" y="414" fill="#475569">x</text>
+    <text x="22" y="212" fill="#475569" transform="rotate(-90 22 212)">camera y</text>
+    <text x="68" y="28" fill="#475569" font-size="18" font-weight="700">Snapshot 000080 - density projection</text>
+  </g>
+  <g stroke="#334155" stroke-width="1.2">
+    <path d="M68 372H674"/>
+    <path d="M68 44V372"/>
+  </g>
+  <g font-family="Arial, sans-serif" font-size="12" fill="#64748b">
+    <text x="70" y="394">Density mode bins particles into a projected image, making cores and diffuse tidal debris easier to read.</text>
+  </g>
+</svg>
