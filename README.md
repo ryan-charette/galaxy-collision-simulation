@@ -2,7 +2,7 @@
 
 A compact 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV snapshot output, diagnostics, and Python plotting/animation tools.
 
-## Implemented MVP
+## Features
 
 - Softened Newtonian gravity in nondimensional units
 - Direct `O(N^2)` force solver for correctness baselines
@@ -16,21 +16,41 @@ A compact 3D gravitational N-body simulator for galaxy collision experiments. Th
 - Python snapshot loader, static plotting, and MP4/GIF animation scripts
 - CTest smoke tests covering vectors, forces, integration, FMM accuracy, CUDA fallback, MPI ownership, config parsing, diagnostics, and snapshot writing
 
+## Example Visuals
+
+The checked-in previews below are lightweight, representative snapshot plots. Real runs write CSV snapshots, and the Python tools render data-backed PNG, MP4/GIF, density, and interactive HTML views from those files.
+
+![Representative XY snapshot projection](docs/assets/snapshot_xy.svg)
+
+![Representative XZ snapshot projection](docs/assets/snapshot_xz.svg)
+
+![Representative density projection](docs/assets/snapshot_density.svg)
+
+## How The Solvers Work
+
+The direct solver is the accuracy baseline: every particle interacts with every other particle, so the force calculation is `O(N^2)`. It is simple, deterministic, and useful for validating the approximate solvers on small particle counts.
+
+Barnes-Hut accelerates the same gravity calculation with an octree. Each node stores aggregate mass, center of mass, and optional Cartesian multipole moments. For a target particle, far cells are accepted when their size-to-distance ratio is below `tree_theta`; those cells are evaluated as a single far-field source, while nearby cells are opened until the solver reaches leaves and computes direct particle-particle interactions. Smaller `tree_theta` values are slower but more accurate, and larger values are faster but more approximate.
+
+The FMM path uses a fuller tree interaction pipeline. Leaves first convert particles into multipole moments (P2M), parent cells aggregate child moments (M2M), well-separated cells exchange far-field contributions with M2L-style interactions, and neighboring leaves are handled with direct P2P work. The expansion order controls how much structure each cell carries: `p=0` is monopole mass only, `p=2` adds quadrupole terms, and `p=4` includes fourth-order Cartesian moments for the highest accuracy target in this project. Compared with Barnes-Hut, FMM reuses cell-cell interactions more systematically, so it is designed to scale better at large particle counts while retaining tunable accuracy.
+
 ## Repository Layout
 
 ```text
-cpp/core/         core particles, config, integrator, diagnostics, CLI
-cpp/direct/       direct softened-gravity solver
-cpp/fmm/          Barnes-Hut treecode and p=4 FMM solver
-cpp/mpi/          rank ownership and particle synchronization helpers
-cpp/cuda/         optional CUDA direct/P2P kernels and CPU fallback
-cpp/io/           CSV snapshot and diagnostics writer
-cpp/tests/        C++ smoke/unit tests
-python/utils/     snapshot and diagnostics loaders
-python/analysis/  plots
-python/animation/ rendering
-configs/          simulation configs
-scripts/          build and smoke-test helpers
+cpp/core/       core particles, config, integrator, diagnostics, CLI
+cpp/direct/     direct softened-gravity solver
+cpp/fmm/        Barnes-Hut treecode and p=4 FMM solver
+cpp/mpi/        rank ownership and particle synchronization helpers
+cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
+cpp/io/         CSV snapshot and diagnostics writer
+cpp/tests/      C++ smoke/unit tests
+python/utils/   snapshot and diagnostics loaders
+python/analysis/static plots
+python/animation/MP4/GIF rendering
+configs/        simulation configs
+experiments/    output destinations and experiment notes
+docs/           design, architecture, roadmap, testing plan
+scripts/        build and smoke-test helpers
 ```
 
 ## Build
@@ -124,3 +144,7 @@ Create a self-contained interactive browser viewer:
 ```bash
 python -m python.animation.interactive_viewer --input experiments/validation/smoke_test --output viewer.html
 ```
+
+## Current Scope
+
+This is now a distributed/GPU-capable 3D MVP. The FMM supports monopole (`p=0`), quadrupole (`p=2`), and fourth-order Cartesian (`p=4`) moments; orders above `p=4` are intentionally out of scope for this project.
