@@ -23,6 +23,13 @@ __pycache__/
 *.mp4
 *.gif
 *.png
+viewer.html
+interactive_galaxy_viewer.html
+
+# README visual assets
+!docs/assets/*.gif
+!docs/assets/*.png
+
 snapshot_*.csv
 diagnostics.csv
 metadata.json
