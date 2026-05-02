@@ -2,7 +2,7 @@
 
 A compact 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV snapshot output, diagnostics, and Python plotting/animation tools.
 
-## Implemented MVP
+## Features
 
 - Softened Newtonian gravity in nondimensional units
 - Direct `O(N^2)` force solver for correctness baselines
@@ -148,14 +148,3 @@ Create a self-contained interactive browser viewer:
 ```bash
 python -m python.animation.interactive_viewer --input experiments/validation/smoke_test --output viewer.html
 ```
-
-Regenerate the README collision GIF from the dedicated 1000-body config:
-
-```bash
-./build/fmm_galaxy_sim --config configs/readme_1000_body_collision.toml
-python scripts/render_readme_snapshot_gif.py --input experiments/validation/readme_1000_body_collision --output docs/assets/galaxy_collision_3d_1000.gif
-```
-
-## Current Scope
-
-This is now a distributed/GPU-capable 3D MVP. The FMM supports monopole (`p=0`), quadrupole (`p=2`), and fourth-order Cartesian (`p=4`) moments; orders above `p=4` are intentionally out of scope for this project.
