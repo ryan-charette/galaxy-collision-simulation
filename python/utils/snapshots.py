@@ -46,7 +46,9 @@ def list_snapshot_files(directory: str | Path) -> list[Path]:
 def load_snapshot(path: str | Path) -> Snapshot:
     """Load one C++ CSV snapshot."""
     path = Path(path)
-    data = np.genfromtxt(path, delimiter=",", names=True, comments="#")
+    with path.open("r", encoding="utf-8") as handle:
+        skip_header = 1 if handle.readline().startswith("# time=") else 0
+    data = np.genfromtxt(path, delimiter=",", names=True, skip_header=skip_header)
     if data.shape == ():
         data = np.array([data], dtype=data.dtype)
 
