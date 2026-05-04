@@ -1,0 +1,14 @@
+{
+  "name": "benchmark_direct_1000",
+  "solver": "direct",
+  "particle_count": 1000,
+  "steps": 20,
+  "dt": 0.01,
+  "snapshot_every": 20,
+  "dim": 3,
+  "gravitational_constant": 1,
+  "softening": 0.025,
+  "tree_theta": 0.58,
+  "tree_leaf_capacity": 16,
+  "fmm_expansion_order": 4
+}
