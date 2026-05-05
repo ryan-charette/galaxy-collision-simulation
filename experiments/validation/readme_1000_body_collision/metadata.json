@@ -1,0 +1,14 @@
+{
+  "name": "readme_1000_body_collision",
+  "solver": "fmm",
+  "particle_count": 1000,
+  "steps": 299,
+  "dt": 0.012,
+  "snapshot_every": 1,
+  "dim": 3,
+  "gravitational_constant": 1,
+  "softening": 0.025,
+  "tree_theta": 0.58,
+  "tree_leaf_capacity": 16,
+  "fmm_expansion_order": 4
+}
