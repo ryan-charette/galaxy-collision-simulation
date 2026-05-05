@@ -35,6 +35,7 @@ snapshot_*.csv
 diagnostics.csv
 metadata.json
 experiments/**/outputs/
+experiments/benchmarks/
 experiments/**/snapshots/
 experiments/**/snapshot_*.csv
 experiments/**/diagnostics.csv
