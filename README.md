@@ -54,6 +54,20 @@ The table below comes from `scripts/run_benchmarks.py` on a local CPU build used
 
 Raw benchmark results are saved in `docs/benchmarks/local_cpu_benchmark.csv`, with a generated Markdown copy in `docs/benchmarks/local_cpu_benchmark.md`.
 
+This following table comes from `experiments/benchmarks/a100/` on an NVIDIA A100-SXM4-40GB GPU build. The fastest measured path is `cuda-tree` with monopole forces (`fmm_expansion_order = 0`). Its best throughput is the 500,000-particle case at 787,735 particle-steps/s.
+
+| Solver | Expansion | Particles | Steps | Median wall time (s) | Particle-steps/s |
+|---|---:|---:|---:|---:|---:|
+| `cuda-tree` | 0 | 500,000 | 5 | 3.174 | 787,735 |
+| `cuda-tree` | 0 | 1,000,000 | 5 | 7.079 | 706,330 |
+| `cuda-fmm` | 0 | 1,000,000 | 5 | 48.268 | 103,589 |
+| `cuda-tree` | 2 | 250,000 | 5 | 27.300 | 45,788 |
+| `cuda-fmm` | 2 | 250,000 | 5 | 37.007 | 33,777 |
+| `cuda-tree` | 4 | 250,000 | 5 | 54.505 | 22,933 |
+| `cuda-fmm` | 4 | 250,000 | 5 | 66.925 | 18,678 |
+
+See `docs/benchmarks/README.md` for the benchmark index and `experiments/benchmarks/a100/README.md` for the full A100 summary, raw CSVs, logs, and generated benchmark configs.
+
 ## Repository Layout
 
 ```text
