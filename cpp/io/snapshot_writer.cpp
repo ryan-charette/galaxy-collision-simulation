@@ -29,8 +29,13 @@ std::string snapshot_filename(int step) {
 }  // namespace
 
 SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(config.output.directory) {
+    enabled_ = config.output.format != "none";
+    if (!enabled_) {
+        return;
+    }
+
     if (config.output.format != "csv") {
-        throw std::runtime_error("Only csv snapshot output is implemented in this MVP");
+        throw std::runtime_error("Only csv snapshot output or format=\"none\" is implemented");
     }
 
     std::filesystem::create_directories(directory_);
@@ -48,6 +53,10 @@ SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(conf
 }
 
 void SnapshotWriter::write_metadata(const SimulationConfig& config, std::size_t particle_count) {
+    if (!enabled_) {
+        return;
+    }
+
     std::ofstream metadata(directory_ / "metadata.json", std::ios::trunc);
     if (!metadata) {
         throw std::runtime_error("Could not write metadata output in " + directory_.string());
@@ -70,6 +79,10 @@ void SnapshotWriter::write_metadata(const SimulationConfig& config, std::size_t 
 }
 
 void SnapshotWriter::write_snapshot(int step, double time, const std::vector<Particle>& particles) {
+    if (!enabled_) {
+        return;
+    }
+
     std::ofstream output(directory_ / snapshot_filename(step), std::ios::trunc);
     if (!output) {
         throw std::runtime_error("Could not write snapshot output in " + directory_.string());
@@ -101,6 +114,10 @@ void SnapshotWriter::write_diagnostics(
     const Diagnostics& diagnostics,
     std::size_t particle_count
 ) {
+    if (!enabled_) {
+        return;
+    }
+
     diagnostics_stream_ << std::setprecision(17)
                         << step << ','
                         << time << ','

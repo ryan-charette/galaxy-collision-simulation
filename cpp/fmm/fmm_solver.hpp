@@ -2,6 +2,7 @@
 
 #include "core/particle.hpp"
 #include "core/simulation_params.hpp"
+#include "fmm/flat_tree.hpp"
 #include "fmm/multipole.hpp"
 
 #include <array>
@@ -30,6 +31,7 @@ public:
 
     void compute(std::vector<Particle>& particles);
     void compute_targets(std::vector<Particle>& particles, std::size_t begin, std::size_t end);
+    FlatFmmData build_flat_fmm(const std::vector<Particle>& particles);
 
     const FmmStats& stats() const { return stats_; }
 
@@ -62,6 +64,7 @@ private:
     void build_interaction_lists();
     void build_leaf_interactions(int target_leaf_index, int source_node_index);
     Vec2 evaluate_particle(std::size_t target_index, const Node& target_leaf) const;
+    FlatFmmData export_flat_fmm() const;
 
     bool is_leaf(const Node& node) const;
     bool well_separated(const Node& target, const Node& source) const;
@@ -79,6 +82,12 @@ void compute_fmm_accelerations_for_targets(
     const PhysicsParams& params,
     std::size_t begin,
     std::size_t end,
+    FmmOptions options = {}
+);
+
+FlatFmmData build_flat_fmm(
+    const std::vector<Particle>& particles,
+    const PhysicsParams& params,
     FmmOptions options = {}
 );
 

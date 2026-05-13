@@ -9,7 +9,7 @@ A compact 3D gravitational N-body simulator for galaxy collision experiments. Th
 - Barnes-Hut octree solver with optional `p=4` far-field correction
 - FMM solver with P2M/M2M aggregation, `p=4` Cartesian moments, M2L-style cell interaction lists, and P2P near-field leaves
 - MPI rank ownership with all-rank particle synchronization
-- Optional CUDA direct/P2P force and leapfrog kernels with CPU fallback
+- Optional CUDA direct/P2P force kernels, plus GPU evaluation paths for CPU-built tree and FMM interaction data
 - Kick-drift-kick leapfrog integrator
 - Reproducible disk-galaxy initial conditions from TOML-like configs
 - CSV snapshots plus metadata and energy/momentum diagnostics
@@ -111,7 +111,7 @@ Choose a solver in the config:
 
 ```toml
 [simulation]
-solver = "fmm"          # direct, tree, fmm, cuda-direct
+solver = "fmm"          # direct, tree, fmm, cuda-direct, cuda-tree, cuda-fmm
 dim = 3
 tree_theta = 0.6
 tree_leaf_capacity = 16
@@ -129,6 +129,17 @@ Run the CUDA direct/P2P kernel when a CUDA device is available:
 ```toml
 [simulation]
 solver = "cuda-direct"
+```
+
+For larger GPU throughput tests, use `cuda-tree` or `cuda-fmm` and disable CSV/diagnostic output:
+
+```toml
+[simulation]
+solver = "cuda-fmm"
+fmm_expansion_order = 0 # fastest high-scale setting
+
+[output]
+format = "none"
 ```
 
 ## Python Analysis
@@ -178,4 +189,5 @@ Regenerate the README collision GIF from the dedicated 1000-body config:
 python scripts/render_readme_snapshot_gif.py --input experiments/validation/readme_1000_body_collision --output docs/assets/galaxy_collision_3d_1000.gif
 python -m python.analysis.plot_snapshots --input experiments/validation/readme_1000_body_collision --snapshot experiments/validation/readme_1000_body_collision/snapshot_000149.csv --output docs/assets/readme_snapshot_step149.png --density-output docs/assets/readme_density_step149.png --no-diagnostics
 python scripts/run_benchmarks.py --executable build-readme-gif/fmm_galaxy_sim.exe --particles 250 500 1000 --steps 20 --repetitions 3
+python scripts/run_benchmarks.py --executable build/fmm_galaxy_sim --solvers cuda-tree cuda-fmm --particles 10000 50000 100000 --steps 10 --repetitions 3 --output-format none --expansion-order 0
 ```

@@ -1,4 +1,4 @@
-"""Run repeatable local CPU benchmarks for the simulator executable."""
+"""Run repeatable local benchmarks for the simulator executable."""
 
 from __future__ import annotations
 
@@ -31,7 +31,17 @@ class BenchmarkCase:
         return (self.particles * self.steps) / self.seconds
 
 
-def write_config(path: Path, solver: str, particles: int, steps: int, output: Path) -> None:
+def write_config(
+    path: Path,
+    solver: str,
+    particles: int,
+    steps: int,
+    output: Path,
+    output_format: str,
+    theta: float,
+    leaf_capacity: int,
+    expansion_order: int,
+) -> None:
     half = particles // 2
     rest = particles - half
     config = f"""[simulation]
@@ -43,9 +53,9 @@ n_particles = {particles}
 steps = {steps}
 dt = 0.01
 snapshot_every = {steps}
-tree_theta = 0.58
-tree_leaf_capacity = 16
-fmm_expansion_order = 4
+tree_theta = {theta}
+tree_leaf_capacity = {leaf_capacity}
+fmm_expansion_order = {expansion_order}
 
 [physics]
 G = 1.0
@@ -75,7 +85,7 @@ inclination = -0.72
 
 [output]
 directory = "{output.as_posix()}"
-format = "csv"
+format = "{output_format}"
 """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(config, encoding="utf-8")
@@ -96,10 +106,24 @@ def run_case(
     steps: int,
     replicate: int,
     work_dir: Path,
+    output_format: str,
+    theta: float,
+    leaf_capacity: int,
+    expansion_order: int,
 ) -> BenchmarkCase:
     config_path = work_dir / "configs" / f"{solver}_{particles}_r{replicate}.toml"
     output_dir = work_dir / "outputs" / f"{solver}_{particles}_r{replicate}"
-    write_config(config_path, solver, particles, steps, output_dir)
+    write_config(
+        config_path,
+        solver,
+        particles,
+        steps,
+        output_dir,
+        output_format,
+        theta,
+        leaf_capacity,
+        expansion_order,
+    )
 
     command = [str(executable), "--config", str(config_path)]
     started = time.perf_counter()
@@ -156,7 +180,14 @@ def summarize(results: list[BenchmarkCase]) -> list[tuple[str, int, int, float, 
         grouped.setdefault((result.solver, result.particles, result.steps), []).append(result)
 
     rows = []
-    solver_order = {"direct": 0, "tree": 1, "fmm": 2}
+    solver_order = {
+        "direct": 0,
+        "cuda-direct": 1,
+        "tree": 2,
+        "cuda-tree": 3,
+        "fmm": 4,
+        "cuda-fmm": 5,
+    }
     for (solver, particles, steps), cases in sorted(
         grouped.items(),
         key=lambda item: (item[0][1], solver_order.get(item[0][0], 99), item[0][0]),
@@ -174,13 +205,13 @@ def write_markdown(path: Path, results: list[BenchmarkCase]) -> None:
     rows = summarize(results)
     generated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lines = [
-        "# CPU Benchmark Results",
+        "# Benchmark Results",
         "",
         f"Generated: {generated}",
         "",
         f"Platform: `{platform.platform()}`",
         "",
-        "Build: Release CPU executable, MPI disabled, CUDA disabled.",
+        "Build: Release executable. CUDA use depends on the selected solver and build configuration.",
         "",
         "| Solver | Particles | Steps | Median wall time (s) | Steps/s | Particle-steps/s |",
         "|---|---:|---:|---:|---:|---:|",
@@ -204,6 +235,10 @@ def main() -> None:
     parser.add_argument("--particles", nargs="+", type=int, default=[250, 500, 1000])
     parser.add_argument("--steps", type=int, default=20)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--output-format", choices=["csv", "none"], default="csv")
+    parser.add_argument("--theta", type=float, default=0.58)
+    parser.add_argument("--leaf-capacity", type=int, default=16)
+    parser.add_argument("--expansion-order", type=int, choices=[0, 2, 4], default=4)
     args = parser.parse_args()
 
     if not args.executable.exists():
@@ -213,7 +248,18 @@ def main() -> None:
     for particles in args.particles:
         for solver in args.solvers:
             for replicate in range(1, args.repetitions + 1):
-                result = run_case(args.executable, solver, particles, args.steps, replicate, args.work_dir)
+                result = run_case(
+                    args.executable,
+                    solver,
+                    particles,
+                    args.steps,
+                    replicate,
+                    args.work_dir,
+                    args.output_format,
+                    args.theta,
+                    args.leaf_capacity,
+                    args.expansion_order,
+                )
                 results.append(result)
                 print(
                     f"{solver:>6} n={particles:<5} run={replicate} "

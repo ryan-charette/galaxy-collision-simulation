@@ -3,6 +3,7 @@
 #include "core/particle.hpp"
 #include "core/simulation_params.hpp"
 #include "core/vector2.hpp"
+#include "fmm/flat_tree.hpp"
 #include "fmm/multipole.hpp"
 
 #include <array>
@@ -22,6 +23,7 @@ public:
     );
 
     void compute(std::vector<Particle>& particles);
+    FlatTreeData build_flat_tree(const std::vector<Particle>& particles);
 
 private:
     struct Node {
@@ -48,6 +50,7 @@ private:
     double compute_moments(int node_index);
     void compute_multipole_moments(int node_index);
     Vec2 accumulate_from_node(int node_index, std::size_t target_index, const Vec2& target_position) const;
+    FlatTreeData export_flat_tree() const;
     bool is_leaf(const Node& node) const;
     bool contains(const Node& node, const Vec2& position) const;
     int child_index_for(const Node& node, const Vec2& position) const;
@@ -58,6 +61,15 @@ void compute_tree_accelerations(
     const PhysicsParams& params,
     double theta = 0.6,
     std::size_t leaf_capacity = 16,
+    int expansion_order = 4
+);
+
+FlatTreeData build_flat_tree(
+    const std::vector<Particle>& particles,
+    const PhysicsParams& params,
+    double theta = 0.6,
+    std::size_t leaf_capacity = 16,
+    int max_depth = 32,
     int expansion_order = 4
 );
 

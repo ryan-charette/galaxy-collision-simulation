@@ -90,6 +90,8 @@ int main() {
     auto tree_particles = direct_particles;
     auto fmm_particles = direct_particles;
     auto cuda_particles = direct_particles;
+    auto cuda_tree_particles = direct_particles;
+    auto cuda_fmm_particles = direct_particles;
     fmmgalaxy::PhysicsParams softened;
     softened.softening = 0.03;
     fmmgalaxy::compute_direct_accelerations(direct_particles, softened);
@@ -100,27 +102,51 @@ int main() {
     fmm_options.expansion_order = 4;
     fmmgalaxy::compute_fmm_accelerations(fmm_particles, softened, fmm_options);
     fmmgalaxy::compute_cuda_direct_accelerations(cuda_particles, softened);
+    fmmgalaxy::CudaTreeOptions cuda_tree_options;
+    cuda_tree_options.theta = 0.25;
+    cuda_tree_options.leaf_capacity = 4;
+    cuda_tree_options.expansion_order = 4;
+    fmmgalaxy::CudaTreeOptions cuda_fmm_options;
+    cuda_fmm_options.theta = 0.35;
+    cuda_fmm_options.leaf_capacity = 4;
+    cuda_fmm_options.expansion_order = 4;
+    fmmgalaxy::compute_cuda_tree_accelerations(cuda_tree_particles, softened, cuda_tree_options);
+    fmmgalaxy::compute_cuda_fmm_accelerations(cuda_fmm_particles, softened, cuda_fmm_options);
 
     double relative_error_sum = 0.0;
     double fmm_relative_error_sum = 0.0;
     double cuda_relative_error_sum = 0.0;
+    double cuda_tree_relative_error_sum = 0.0;
+    double cuda_fmm_relative_error_sum = 0.0;
     for (std::size_t i = 0; i < direct_particles.size(); ++i) {
         const Vec2 diff = tree_particles[i].acceleration - direct_particles[i].acceleration;
         const Vec2 fmm_diff = fmm_particles[i].acceleration - direct_particles[i].acceleration;
         const Vec2 cuda_diff = cuda_particles[i].acceleration - direct_particles[i].acceleration;
+        const Vec2 cuda_tree_diff = cuda_tree_particles[i].acceleration - tree_particles[i].acceleration;
+        const Vec2 cuda_fmm_diff = cuda_fmm_particles[i].acceleration - fmm_particles[i].acceleration;
         const double denom = std::max(fmmgalaxy::norm(direct_particles[i].acceleration), 1.0e-12);
+        const double tree_denom = std::max(fmmgalaxy::norm(tree_particles[i].acceleration), 1.0e-12);
+        const double fmm_denom = std::max(fmmgalaxy::norm(fmm_particles[i].acceleration), 1.0e-12);
         relative_error_sum += fmmgalaxy::norm(diff) / denom;
         fmm_relative_error_sum += fmmgalaxy::norm(fmm_diff) / denom;
         cuda_relative_error_sum += fmmgalaxy::norm(cuda_diff) / denom;
+        cuda_tree_relative_error_sum += fmmgalaxy::norm(cuda_tree_diff) / tree_denom;
+        cuda_fmm_relative_error_sum += fmmgalaxy::norm(cuda_fmm_diff) / fmm_denom;
     }
     const double mean_relative_error = relative_error_sum / static_cast<double>(direct_particles.size());
     const double fmm_mean_relative_error =
         fmm_relative_error_sum / static_cast<double>(direct_particles.size());
     const double cuda_mean_relative_error =
         cuda_relative_error_sum / static_cast<double>(direct_particles.size());
+    const double cuda_tree_mean_relative_error =
+        cuda_tree_relative_error_sum / static_cast<double>(direct_particles.size());
+    const double cuda_fmm_mean_relative_error =
+        cuda_fmm_relative_error_sum / static_cast<double>(direct_particles.size());
     failures += !require(mean_relative_error < 0.08, "tree solver stays close to direct solver");
     failures += !require(fmm_mean_relative_error < 0.25, "p=4 FMM solver stays close to direct solver");
     failures += !require(cuda_mean_relative_error < 1.0e-10, "CUDA direct solver matches direct solver");
+    failures += !require(cuda_tree_mean_relative_error < 1.0e-8, "CUDA tree solver matches CPU tree solver");
+    failures += !require(cuda_fmm_mean_relative_error < 1.0e-8, "CUDA FMM solver matches CPU FMM solver");
 
     const auto serial_owned = fmmgalaxy::ownership_for_rank(direct_particles.size(), 0, 1);
     failures += !require(serial_owned.begin == 0, "MPI serial ownership starts at zero");
