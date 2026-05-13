@@ -87,6 +87,7 @@ int main() {
         particle.position = {uniform(rng), uniform(rng), uniform(rng)};
         particle.mass = 1.0 / static_cast<double>(direct_particles.size());
     }
+    const auto initial_particles = direct_particles;
     auto tree_particles = direct_particles;
     auto fmm_particles = direct_particles;
     auto cuda_particles = direct_particles;
@@ -147,6 +148,45 @@ int main() {
     failures += !require(cuda_mean_relative_error < 1.0e-10, "CUDA direct solver matches direct solver");
     failures += !require(cuda_tree_mean_relative_error < 1.0e-8, "CUDA tree solver matches CPU tree solver");
     failures += !require(cuda_fmm_mean_relative_error < 1.0e-8, "CUDA FMM solver matches CPU FMM solver");
+
+    auto tree_step_particles = initial_particles;
+    auto cuda_tree_step_particles = initial_particles;
+    fmmgalaxy::compute_tree_accelerations(tree_step_particles, softened, 0.25, 4, 4);
+    fmmgalaxy::compute_cuda_tree_accelerations(cuda_tree_step_particles, softened, cuda_tree_options);
+    auto compute_tree_step = [&softened](std::vector<fmmgalaxy::Particle>& state) {
+        fmmgalaxy::compute_tree_accelerations(state, softened, 0.25, 4, 4);
+    };
+    fmmgalaxy::leapfrog_step(tree_step_particles, 0.01, compute_tree_step);
+    fmmgalaxy::cuda_tree_leapfrog_step(cuda_tree_step_particles, 0.01, softened, cuda_tree_options);
+
+    auto fmm_step_particles = initial_particles;
+    auto cuda_fmm_step_particles = initial_particles;
+    fmmgalaxy::compute_fmm_accelerations(fmm_step_particles, softened, fmm_options);
+    fmmgalaxy::compute_cuda_fmm_accelerations(cuda_fmm_step_particles, softened, cuda_fmm_options);
+    auto compute_fmm_step = [&softened, fmm_options](std::vector<fmmgalaxy::Particle>& state) {
+        fmmgalaxy::compute_fmm_accelerations(state, softened, fmm_options);
+    };
+    fmmgalaxy::leapfrog_step(fmm_step_particles, 0.01, compute_fmm_step);
+    fmmgalaxy::cuda_fmm_leapfrog_step(cuda_fmm_step_particles, 0.01, softened, cuda_fmm_options);
+
+    double cuda_tree_step_error = 0.0;
+    double cuda_fmm_step_error = 0.0;
+    for (std::size_t i = 0; i < initial_particles.size(); ++i) {
+        cuda_tree_step_error = std::max(
+            cuda_tree_step_error,
+            fmmgalaxy::norm(cuda_tree_step_particles[i].position - tree_step_particles[i].position) +
+                fmmgalaxy::norm(cuda_tree_step_particles[i].velocity - tree_step_particles[i].velocity) +
+                fmmgalaxy::norm(cuda_tree_step_particles[i].acceleration - tree_step_particles[i].acceleration)
+        );
+        cuda_fmm_step_error = std::max(
+            cuda_fmm_step_error,
+            fmmgalaxy::norm(cuda_fmm_step_particles[i].position - fmm_step_particles[i].position) +
+                fmmgalaxy::norm(cuda_fmm_step_particles[i].velocity - fmm_step_particles[i].velocity) +
+                fmmgalaxy::norm(cuda_fmm_step_particles[i].acceleration - fmm_step_particles[i].acceleration)
+        );
+    }
+    failures += !require(cuda_tree_step_error < 1.0e-7, "CUDA tree leapfrog step matches CPU tree step");
+    failures += !require(cuda_fmm_step_error < 1.0e-7, "CUDA FMM leapfrog step matches CPU FMM step");
 
     const auto serial_owned = fmmgalaxy::ownership_for_rank(direct_particles.size(), 0, 1);
     failures += !require(serial_owned.begin == 0, "MPI serial ownership starts at zero");
