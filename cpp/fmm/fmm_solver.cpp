@@ -97,7 +97,9 @@ void FastMultipoleSolver::build(const std::vector<Particle>& particles) {
     }
 
     p2m_m2m(0);
-    compute_multipole_moments(0);
+    if (options_.expansion_order > 0) {
+        compute_multipole_moments(0);
+    }
     collect_leaves(0);
     build_interaction_lists();
 

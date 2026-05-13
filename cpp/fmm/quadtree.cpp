@@ -84,7 +84,9 @@ void BarnesHutSolver::build(const std::vector<Particle>& particles) {
     }
 
     compute_moments(0);
-    compute_multipole_moments(0);
+    if (expansion_order_ > 0) {
+        compute_multipole_moments(0);
+    }
 }
 
 bool BarnesHutSolver::is_leaf(const Node& node) const {
