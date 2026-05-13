@@ -101,23 +101,3 @@ def iter_group_masks(group_id: np.ndarray) -> Iterable[tuple[int, np.ndarray]]:
     """Yield stable group masks for plotting."""
     for group in sorted(int(value) for value in np.unique(group_id)):
         yield group, group_id == group
-
-
-def load_placeholder_snapshot(path: str | Path) -> Snapshot:
-    """Backward-compatible synthetic snapshot for older notebooks."""
-    _ = Path(path)
-    theta = np.linspace(0.0, 2.0 * np.pi, 512, endpoint=False)
-    r = 0.2 + 0.8 * np.sqrt(np.linspace(0.0, 1.0, 512))
-    positions = np.column_stack([r * np.cos(theta), r * np.sin(theta), np.zeros_like(theta)])
-    zeros = np.zeros_like(positions)
-    return Snapshot(
-        step=0,
-        time=0.0,
-        ids=np.arange(len(theta)),
-        positions=positions,
-        velocities=zeros,
-        accelerations=zeros,
-        masses=np.ones(len(theta)) / len(theta),
-        group_id=np.zeros(len(theta), dtype=np.int32),
-        path=None,
-    )
