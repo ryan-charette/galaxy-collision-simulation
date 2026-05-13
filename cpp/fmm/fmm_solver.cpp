@@ -45,6 +45,14 @@ void FastMultipoleSolver::compute_targets(
     }
 }
 
+FlatFmmData FastMultipoleSolver::build_flat_fmm(const std::vector<Particle>& particles) {
+    if (particles.empty()) {
+        return {};
+    }
+    build(particles);
+    return export_flat_fmm();
+}
+
 void FastMultipoleSolver::build(const std::vector<Particle>& particles) {
     particles_ = &particles;
     nodes_.clear();
@@ -312,6 +320,67 @@ Vec2 FastMultipoleSolver::evaluate_particle(std::size_t target_index, const Node
     return acceleration;
 }
 
+FlatFmmData FastMultipoleSolver::export_flat_fmm() const {
+    FlatFmmData flat;
+    flat.tree.nodes.reserve(nodes_.size());
+
+    for (const Node& node : nodes_) {
+        FlatTreeNode flat_node;
+        flat_node.center = node.center;
+        flat_node.half_width = node.half_width;
+        flat_node.mass = node.mass;
+        flat_node.center_of_mass = node.center_of_mass;
+        flat_node.moments = node.moments;
+        flat_node.children = node.children;
+        flat_node.particle_begin = flat.tree.particle_indices.size();
+        flat_node.particle_count = node.particle_indices.size();
+        flat_node.is_leaf = is_leaf(node);
+        flat.tree.particle_indices.insert(
+            flat.tree.particle_indices.end(),
+            node.particle_indices.begin(),
+            node.particle_indices.end()
+        );
+        flat.tree.nodes.push_back(flat_node);
+    }
+
+    if (particles_ != nullptr) {
+        flat.particle_leaf_indices.assign(particles_->size(), -1);
+    }
+
+    flat.leaves.reserve(leaf_indices_.size());
+    for (std::size_t leaf_position = 0; leaf_position < leaf_indices_.size(); ++leaf_position) {
+        const int leaf_node_index = leaf_indices_[leaf_position];
+        const Node& leaf = nodes_[static_cast<std::size_t>(leaf_node_index)];
+
+        FlatFmmLeaf flat_leaf;
+        flat_leaf.node_index = leaf_node_index;
+        flat_leaf.far_begin = flat.far_node_indices.size();
+        flat_leaf.far_count = leaf.far_nodes.size();
+        flat.far_node_indices.insert(
+            flat.far_node_indices.end(),
+            leaf.far_nodes.begin(),
+            leaf.far_nodes.end()
+        );
+        flat_leaf.near_begin = flat.near_leaf_node_indices.size();
+        flat_leaf.near_count = leaf.near_leaves.size();
+        flat.near_leaf_node_indices.insert(
+            flat.near_leaf_node_indices.end(),
+            leaf.near_leaves.begin(),
+            leaf.near_leaves.end()
+        );
+
+        for (const std::size_t particle_index : leaf.particle_indices) {
+            if (particle_index < flat.particle_leaf_indices.size()) {
+                flat.particle_leaf_indices[particle_index] = static_cast<int>(leaf_position);
+            }
+        }
+
+        flat.leaves.push_back(flat_leaf);
+    }
+
+    return flat;
+}
+
 void compute_fmm_accelerations(
     std::vector<Particle>& particles,
     const PhysicsParams& params,
@@ -330,6 +399,15 @@ void compute_fmm_accelerations_for_targets(
 ) {
     FastMultipoleSolver solver(params, options);
     solver.compute_targets(particles, begin, end);
+}
+
+FlatFmmData build_flat_fmm(
+    const std::vector<Particle>& particles,
+    const PhysicsParams& params,
+    FmmOptions options
+) {
+    FastMultipoleSolver solver(params, options);
+    return solver.build_flat_fmm(particles);
 }
 
 }  // namespace fmmgalaxy

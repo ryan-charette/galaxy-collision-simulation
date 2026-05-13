@@ -21,6 +21,7 @@ public:
 private:
     std::filesystem::path directory_;
     std::ofstream diagnostics_stream_;
+    bool enabled_{true};
 };
 
 }  // namespace fmmgalaxy

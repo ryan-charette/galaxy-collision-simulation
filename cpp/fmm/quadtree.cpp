@@ -35,6 +35,14 @@ void BarnesHutSolver::compute(std::vector<Particle>& particles) {
     }
 }
 
+FlatTreeData BarnesHutSolver::build_flat_tree(const std::vector<Particle>& particles) {
+    if (particles.empty()) {
+        return {};
+    }
+    build(particles);
+    return export_flat_tree();
+}
+
 void BarnesHutSolver::build(const std::vector<Particle>& particles) {
     particles_ = &particles;
     nodes_.clear();
@@ -242,6 +250,32 @@ Vec2 BarnesHutSolver::accumulate_from_node(
     return acceleration;
 }
 
+FlatTreeData BarnesHutSolver::export_flat_tree() const {
+    FlatTreeData flat;
+    flat.nodes.reserve(nodes_.size());
+
+    for (const Node& node : nodes_) {
+        FlatTreeNode flat_node;
+        flat_node.center = node.center;
+        flat_node.half_width = node.half_width;
+        flat_node.mass = node.mass;
+        flat_node.center_of_mass = node.center_of_mass;
+        flat_node.moments = node.moments;
+        flat_node.children = node.children;
+        flat_node.particle_begin = flat.particle_indices.size();
+        flat_node.particle_count = node.particle_indices.size();
+        flat_node.is_leaf = is_leaf(node);
+        flat.particle_indices.insert(
+            flat.particle_indices.end(),
+            node.particle_indices.begin(),
+            node.particle_indices.end()
+        );
+        flat.nodes.push_back(flat_node);
+    }
+
+    return flat;
+}
+
 void compute_tree_accelerations(
     std::vector<Particle>& particles,
     const PhysicsParams& params,
@@ -251,6 +285,18 @@ void compute_tree_accelerations(
 ) {
     BarnesHutSolver solver(params, theta, leaf_capacity, 32, expansion_order);
     solver.compute(particles);
+}
+
+FlatTreeData build_flat_tree(
+    const std::vector<Particle>& particles,
+    const PhysicsParams& params,
+    double theta,
+    std::size_t leaf_capacity,
+    int max_depth,
+    int expansion_order
+) {
+    BarnesHutSolver solver(params, theta, leaf_capacity, max_depth, expansion_order);
+    return solver.build_flat_tree(particles);
 }
 
 }  // namespace fmmgalaxy

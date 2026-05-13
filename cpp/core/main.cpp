@@ -72,8 +72,24 @@ bool uses_cuda_direct_solver(const std::string& solver) {
     return solver == "cuda" || solver == "cuda-direct" || solver == "gpu-direct";
 }
 
+bool uses_cuda_tree_solver(const std::string& solver) {
+    return solver == "cuda-tree" || solver == "gpu-tree" || solver == "cuda-barnes-hut";
+}
+
+bool uses_cuda_fmm_solver(const std::string& solver) {
+    return solver == "cuda-fmm" || solver == "gpu-fmm";
+}
+
 fmmgalaxy::FmmOptions fmm_options_from_config(const fmmgalaxy::SimulationConfig& config) {
     fmmgalaxy::FmmOptions options;
+    options.theta = config.tree_theta;
+    options.leaf_capacity = config.tree_leaf_capacity;
+    options.expansion_order = config.fmm_expansion_order;
+    return options;
+}
+
+fmmgalaxy::CudaTreeOptions cuda_tree_options_from_config(const fmmgalaxy::SimulationConfig& config) {
+    fmmgalaxy::CudaTreeOptions options;
     options.theta = config.tree_theta;
     options.leaf_capacity = config.tree_leaf_capacity;
     options.expansion_order = config.fmm_expansion_order;
@@ -102,9 +118,22 @@ void compute_serial_accelerations(
         );
     } else if (uses_cuda_direct_solver(config.solver)) {
         fmmgalaxy::compute_cuda_direct_accelerations(particles, config.physics);
+    } else if (uses_cuda_tree_solver(config.solver)) {
+        fmmgalaxy::compute_cuda_tree_accelerations(
+            particles,
+            config.physics,
+            cuda_tree_options_from_config(config)
+        );
+    } else if (uses_cuda_fmm_solver(config.solver)) {
+        fmmgalaxy::compute_cuda_fmm_accelerations(
+            particles,
+            config.physics,
+            cuda_tree_options_from_config(config)
+        );
     } else {
         throw std::runtime_error(
-            "Unknown solver '" + config.solver + "'. Use direct, tree, fmm, or cuda-direct."
+            "Unknown solver '" + config.solver +
+            "'. Use direct, tree, fmm, cuda-direct, cuda-tree, or cuda-fmm."
         );
     }
 }
@@ -131,9 +160,22 @@ void compute_owned_accelerations(
         );
     } else if (uses_cuda_direct_solver(config.solver)) {
         fmmgalaxy::compute_cuda_direct_accelerations(particles, config.physics);
+    } else if (uses_cuda_tree_solver(config.solver)) {
+        fmmgalaxy::compute_cuda_tree_accelerations(
+            particles,
+            config.physics,
+            cuda_tree_options_from_config(config)
+        );
+    } else if (uses_cuda_fmm_solver(config.solver)) {
+        fmmgalaxy::compute_cuda_fmm_accelerations(
+            particles,
+            config.physics,
+            cuda_tree_options_from_config(config)
+        );
     } else {
         throw std::runtime_error(
-            "Unknown solver '" + config.solver + "'. Use direct, tree, fmm, or cuda-direct."
+            "Unknown solver '" + config.solver +
+            "'. Use direct, tree, fmm, cuda-direct, cuda-tree, or cuda-fmm."
         );
     }
 }
@@ -142,8 +184,10 @@ void run_simulation(const fmmgalaxy::SimulationConfig& config) {
     std::cout << fmmgalaxy::build_summary();
     std::cout << "Simulation: " << config.name << '\n';
     std::cout << "Solver:     " << config.solver << '\n';
-    if (uses_cuda_direct_solver(config.solver)) {
-        std::cout << "CUDA direct available: "
+    if (uses_cuda_direct_solver(config.solver) ||
+        uses_cuda_tree_solver(config.solver) ||
+        uses_cuda_fmm_solver(config.solver)) {
+        std::cout << "CUDA available: "
                   << (fmmgalaxy::cuda_solver_available() ? "yes" : "no, using CPU fallback")
                   << '\n';
     }
@@ -161,6 +205,10 @@ void run_simulation(const fmmgalaxy::SimulationConfig& config) {
     compute_serial_accelerations(particles, config);
 
     auto write_outputs = [&](int step, double time) {
+        if (config.output.format == "none") {
+            std::cout << "step " << step << " time " << time << " output disabled\n";
+            return;
+        }
         const auto diagnostics = fmmgalaxy::compute_diagnostics(particles, config.physics);
         writer.write_snapshot(step, time, particles);
         writer.write_diagnostics(step, time, diagnostics, particles.size());
@@ -172,6 +220,20 @@ void run_simulation(const fmmgalaxy::SimulationConfig& config) {
     for (int step = 1; step <= config.steps; ++step) {
         if (uses_cuda_direct_solver(config.solver)) {
             fmmgalaxy::cuda_direct_leapfrog_step(particles, config.dt, config.physics);
+        } else if (uses_cuda_tree_solver(config.solver)) {
+            fmmgalaxy::cuda_tree_leapfrog_step(
+                particles,
+                config.dt,
+                config.physics,
+                cuda_tree_options_from_config(config)
+            );
+        } else if (uses_cuda_fmm_solver(config.solver)) {
+            fmmgalaxy::cuda_fmm_leapfrog_step(
+                particles,
+                config.dt,
+                config.physics,
+                cuda_tree_options_from_config(config)
+            );
         } else {
             auto compute_accelerations = [&config](std::vector<fmmgalaxy::Particle>& state) {
                 compute_serial_accelerations(state, config);
@@ -183,7 +245,9 @@ void run_simulation(const fmmgalaxy::SimulationConfig& config) {
         }
     }
 
-    std::cout << "Wrote snapshots to " << config.output.directory.string() << '\n';
+    if (config.output.format != "none") {
+        std::cout << "Wrote snapshots to " << config.output.directory.string() << '\n';
+    }
 }
 
 void run_distributed_simulation(
@@ -195,8 +259,10 @@ void run_distributed_simulation(
         std::cout << "Simulation: " << config.name << '\n';
         std::cout << "Solver:     " << config.solver << '\n';
         std::cout << "MPI ranks:  " << execution.size << '\n';
-        if (uses_cuda_direct_solver(config.solver)) {
-            std::cout << "CUDA direct available: "
+        if (uses_cuda_direct_solver(config.solver) ||
+            uses_cuda_tree_solver(config.solver) ||
+            uses_cuda_fmm_solver(config.solver)) {
+            std::cout << "CUDA available: "
                       << (fmmgalaxy::cuda_solver_available() ? "yes" : "no, using CPU fallback")
                       << '\n';
         }
@@ -226,6 +292,10 @@ void run_distributed_simulation(
         if (execution.rank != 0) {
             return;
         }
+        if (config.output.format == "none") {
+            std::cout << "step " << step << " time " << time << " output disabled\n";
+            return;
+        }
         const auto diagnostics = fmmgalaxy::compute_diagnostics(particles, config.physics);
         writer->write_snapshot(step, time, particles);
         writer->write_diagnostics(step, time, diagnostics, particles.size());
@@ -252,7 +322,7 @@ void run_distributed_simulation(
         }
     }
 
-    if (execution.rank == 0) {
+    if (execution.rank == 0 && config.output.format != "none") {
         std::cout << "Wrote snapshots to " << config.output.directory.string() << '\n';
     }
 }
