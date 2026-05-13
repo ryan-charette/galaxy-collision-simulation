@@ -38,6 +38,7 @@ The FMM path uses a fuller tree interaction pipeline. Leaves first convert parti
 
 ## Benchmarking
 
+### CPU
 The table below comes from `scripts/run_benchmarks.py` on a local CPU build used for README artifact generation with 20 integration steps and three repetitions per case. These small-to-mid `N` cases include process startup and CSV output for step 0 plus the final step, so they are best read as end-to-end smoke benchmarks rather than peak kernel throughput. In the current build, direct summation is faster at these sizes; the FMM path currently pays substantial tree/multipole overhead while prioritizing correctness and higher-order expansion support.
 
 | Solver | Particles | Steps | Median wall time (s) | Steps/s | Particle-steps/s |
@@ -54,7 +55,8 @@ The table below comes from `scripts/run_benchmarks.py` on a local CPU build used
 
 Raw benchmark results are saved in `docs/benchmarks/local_cpu_benchmark.csv`, with a generated Markdown copy in `docs/benchmarks/local_cpu_benchmark.md`.
 
-This following table comes from `experiments/benchmarks/a100/` on an NVIDIA A100-SXM4-40GB GPU build. The fastest measured path is `cuda-tree` with monopole forces (`fmm_expansion_order = 0`). Its best throughput is the 500,000-particle case at 787,735 particle-steps/s.
+### GPU
+The following table comes from `experiments/benchmarks/a100/` on an NVIDIA A100-SXM4-40GB GPU build. The fastest measured path is `cuda-tree` with monopole forces (`fmm_expansion_order = 0`). Its best throughput is the 500,000-particle case at 787,735 particle-steps/s.
 
 | Solver | Expansion | Particles | Steps | Median wall time (s) | Particle-steps/s |
 |---|---:|---:|---:|---:|---:|
