@@ -10,7 +10,7 @@ Implemented:
 - GPU per-particle evaluation kernels for `cuda-tree` and `cuda-fmm`,
 - reusable CUDA workspace buffers to avoid per-step allocation churn,
 - pinned host staging with stream-ordered asynchronous transfers,
-- SoA position/mass force inputs for coalesced reads,
+- SoA force inputs with cached static mass/group buffers,
 - shared-memory tiling for `cuda-direct`,
 - specialized p=0, p=2, and p=4 tree/FMM CUDA kernels,
 - GPU kick/drift/final-kick wrappers for `cuda-tree` and `cuda-fmm`,
@@ -22,4 +22,5 @@ Performance notes:
 - The tree/FMM builders still run on CPU, then flattened node and interaction-list data is copied to the GPU for per-particle force evaluation.
 - `fmm_expansion_order = 0` selects the lowest-cost monopole path. Higher-order runs use specialized p=2 or p=4 kernels instead of a runtime-polymorphic multipole loop.
 - `cuda-tree` and `cuda-fmm` keep kick/drift/final-kick work on the GPU; positions are copied back after drift because tree construction still happens on the CPU.
+- Particle mass and group IDs are treated as static per simulation. CUDA uploads them once per count/signature change and never downloads them from GPU kernels.
 - `[output] format = "none"` avoids CSV and diagnostic overhead dominating large runs.
