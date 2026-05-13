@@ -30,11 +30,95 @@ The animation uses 1000 bodies across 300 saved simulation frames with a moving 
 
 ## How The Solvers Work
 
-The direct solver is the accuracy baseline: every particle interacts with every other particle, so the force calculation is `O(N^2)`. It is simple, deterministic, and useful for validating the approximate solvers on small particle counts.
+At each time step, the simulator needs the gravitational acceleration on every particle. All solver options compute the same softened Newtonian force law; they differ only in how they organize the sum over particles.
 
-Barnes-Hut accelerates the same gravity calculation with an octree. Each node stores aggregate mass, center of mass, and optional Cartesian multipole moments. For a target particle, far cells are accepted when their size-to-distance ratio is below `tree_theta`; those cells are evaluated as a single far-field source, while nearby cells are opened until the solver reaches leaves and computes direct particle-particle interactions. Smaller `tree_theta` values are slower but more accurate, and larger values are faster but more approximate.
+For a target particle `i`, the direct mathematical problem is:
 
-The FMM path uses a fuller tree interaction pipeline. Leaves first convert particles into multipole moments (P2M), parent cells aggregate child moments (M2M), well-separated cells exchange far-field contributions with M2L-style interactions, and neighboring leaves are handled with direct P2P work. The expansion order controls how much structure each cell carries: `p=0` is monopole mass only, `p=2` adds quadrupole terms, and `p=4` includes fourth-order Cartesian moments for the highest accuracy target in this project. Compared with Barnes-Hut, FMM reuses cell-cell interactions more systematically, so it is designed to scale better at large particle counts while retaining tunable accuracy.
+```text
+acceleration on i = sum of contributions from every other particle j
+```
+
+With gravitational softening, very close particle pairs are prevented from producing unrealistically large accelerations. In practice, that means the denominator uses a small softening length instead of allowing the distance to go all the way to zero. The time integrator then uses the accelerations returned by the solver to advance positions and velocities.
+
+The main challenge is cost. If there are `N` particles, then asking every particle to interact with every other particle means roughly `N * N` pair evaluations per force step. That is fine for small validation runs, but it becomes expensive quickly: doubling the particle count makes the pairwise work about four times larger. The tree and FMM solvers reduce that cost by using the same physical idea: **nearby particles need detailed treatment, but far-away groups can often be summarized.**
+
+### Direct solver: all pairs, no approximation
+
+The direct solver is the simplest path and the accuracy baseline. For each target particle, it loops over all other particles and adds their softened gravitational contributions one by one.
+
+This has a few useful properties:
+
+- It is easy to reason about because there are no tree-opening rules or expansion-order choices.
+- It is deterministic for a fixed particle set and execution path.
+- It is the best solver for checking whether the approximate solvers are producing reasonable answers on small particle counts.
+- Its cost is `O(N^2)`, so it is not intended to be the fastest option for large simulations.
+
+When a test compares `tree` or `fmm` against `direct`, the direct result is treated as the reference answer. The difference between the direct force and the approximate force is the approximation error introduced by grouping far-away particles.
+
+### Spatial trees: the shared idea behind `tree` and `fmm`
+
+The Barnes-Hut and FMM solvers both organize particles with an octree. An octree is a hierarchy of cubic spatial cells:
+
+1. Start with one root cell that contains the simulation domain.
+2. Split that cell into eight smaller child cells.
+3. Keep splitting occupied cells until each leaf cell contains a small enough number of particles, controlled by `tree_leaf_capacity`.
+
+This gives the solver a multiscale view of the particle distribution. A leaf cell contains local detail. A large cell higher in the tree represents a whole region of space. Each cell stores summary information such as total mass, center of mass, and, when enabled, higher-order Cartesian multipole moments.
+
+A multipole moment is a compact description of how mass is arranged inside a cell. The simplest summary is just the total mass, which treats the whole cell like a point source. Higher-order moments add information about the cell's shape, such as whether the mass is elongated or unevenly distributed. These summaries are useful only when the cell is far enough away from the particle or cell being evaluated.
+
+### Barnes-Hut tree solver: one particle walks the tree
+
+Barnes-Hut accelerates the force calculation by deciding, for each target particle, which source cells are far enough to approximate and which cells must be opened for more detail.
+
+For one target particle, the tree walk works like this:
+
+1. Start at the root cell.
+2. Measure the cell size and its distance from the target particle.
+3. If the cell is sufficiently far away, accept the whole cell as one approximate source.
+4. If the cell is too nearby, open it and repeat the test on its children.
+5. When the walk reaches nearby leaves, compute ordinary particle-particle interactions directly.
+
+The acceptance test is controlled by `tree_theta`. Conceptually, the solver asks whether the apparent angular size of the cell is small from the target particle's point of view. A small, distant cell can be summarized safely; a large or nearby cell cannot.
+
+The tradeoff is:
+
+- Smaller `tree_theta`: stricter acceptance, more opened cells, more direct work, slower but more accurate.
+- Larger `tree_theta`: more accepted cells, fewer interactions, faster but more approximate.
+
+If only total mass is used, an accepted far cell behaves like a single source at its center of mass. With the optional higher-order Cartesian moments, the accepted cell can represent more of its internal mass distribution, improving far-field accuracy without opening as many cells.
+
+For typical particle distributions, Barnes-Hut is much cheaper than direct summation at large `N` because each target particle interacts with a selected set of cells and nearby particles rather than all particles. It is usually a good middle ground: much simpler than a full FMM pipeline, but much faster than direct summation once the particle count is large enough.
+
+### FMM solver: cells interact with cells, then leaves finish locally
+
+The Fast Multipole Method path uses the same octree idea, but it is more systematic about reusing work between groups of particles. Barnes-Hut asks each target particle to perform its own tree walk. FMM instead builds interaction lists between cells so that a far-field calculation can be shared by all particles in a target region.
+
+The implementation uses these stages:
+
+1. **P2M, particle to multipole:** each leaf cell converts its particles into a multipole summary.
+2. **M2M, multipole to multipole:** parent cells combine the summaries of their children, building multipole information upward through the tree.
+3. **M2L-style far-field interactions:** well-separated source and target cells are paired. The source cell's multipole summary is used to contribute to the target region's far-field force calculation.
+4. **P2P, particle to particle:** neighboring leaves are still handled with direct particle-particle work, because nearby interactions require local detail.
+
+The important separation is **far field versus near field**. Far-away cells are handled by compact multipole summaries. Nearby cells are handled directly. This is why FMM can be accurate: it does not use a far-field approximation where the approximation would be inappropriate.
+
+The expansion order controls how much information each cell summary carries:
+
+- `p=0`: monopole only. The cell contributes mainly as total mass, similar to a point-mass approximation. This is the fastest and least detailed setting.
+- `p=2`: includes quadrupole terms. The cell can represent second-order shape information, so elongated or asymmetric mass distributions are modeled better than with `p=0`.
+- `p=4`: includes fourth-order Cartesian moments. This is the highest-accuracy target in this project and carries more detail about each cell's internal mass distribution, at higher computational cost.
+
+Compared with Barnes-Hut, FMM has more setup overhead: it must build multipole summaries, aggregate them through the tree, construct cell interaction lists, and evaluate both far-field and near-field work. The benefit is that far-field cell-cell interactions are reused more systematically. At sufficiently large particle counts, this structure is designed to scale better than having each target particle independently walk the tree.
+
+### Choosing a solver
+
+Use `direct` when you want the clearest reference result or when `N` is small enough that `O(N^2)` work is acceptable. Use `tree` when you want a practical approximation with a simple accuracy knob, `tree_theta`. Use `fmm` when you want the full multipole pipeline with explicit control over expansion order and cell-cell interaction reuse.
+
+The CUDA variants follow the same solver ideas but move the expensive force-evaluation work onto the GPU where available. MPI does not change the force law either; it changes how particle ownership and synchronization are managed across ranks.
+
+For the current benchmarked build, direct summation can still be faster at small-to-mid particle counts because the approximate solvers pay tree-construction and multipole overhead. The tree and FMM paths are most useful when the particle count is large enough, or when you specifically want to exercise the approximation and scaling machinery.
+
 
 ## Benchmarking
 
