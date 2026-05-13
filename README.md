@@ -131,7 +131,7 @@ Run the CUDA direct/P2P kernel when a CUDA device is available:
 solver = "cuda-direct"
 ```
 
-For larger GPU throughput tests, use `cuda-tree` or `cuda-fmm`, set `fmm_expansion_order = 0` for the fastest monopole path, and disable CSV/diagnostic output. The CUDA layer reuses device buffers across steps, stages transfers through pinned memory, uses SoA force inputs, tiles `cuda-direct` through shared memory, and specializes tree/FMM kernels for p=0, p=2, and p=4:
+For larger GPU throughput tests, use `cuda-tree` or `cuda-fmm`, set `fmm_expansion_order = 0` for the fastest monopole path, and disable CSV/diagnostic output. The CUDA layer reuses device buffers across steps, stages transfers through pinned memory, caches static mass/group fields on the GPU, uses SoA force inputs, tiles `cuda-direct` through shared memory, and specializes tree/FMM kernels for p=0, p=2, and p=4:
 
 ```toml
 [simulation]

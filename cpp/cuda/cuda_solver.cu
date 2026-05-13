@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -120,6 +121,8 @@ struct DeviceVec3 {
 };
 
 constexpr int tree_stack_capacity = 512;
+constexpr std::uint64_t fnv_offset_basis = 14695981039346656037ull;
+constexpr std::uint64_t fnv_prime = 1099511628211ull;
 
 DeviceParticle pack_particle(const Particle& particle) {
     return DeviceParticle{
@@ -167,6 +170,20 @@ int checked_int(std::size_t value, const char* name) {
         throw std::runtime_error(std::string(name) + " exceeds CUDA int indexing limit");
     }
     return static_cast<int>(value);
+}
+
+std::uint64_t mix_hash(std::uint64_t hash, std::uint64_t value) {
+    for (int byte = 0; byte < 8; ++byte) {
+        hash ^= (value >> (byte * 8)) & 0xffu;
+        hash *= fnv_prime;
+    }
+    return hash;
+}
+
+std::uint64_t double_bits(double value) {
+    std::uint64_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
 }
 
 DeviceTreeNode pack_tree_node(const FlatTreeNode& node) {
@@ -477,6 +494,13 @@ struct CudaWorkspace {
     PinnedHostBuffer<int> host_near_leaf_node_indices{};
     PinnedHostBuffer<int> host_particle_leaf_indices{};
 
+    std::size_t cached_mass_count{0};
+    std::uint64_t cached_mass_hash{0};
+    bool mass_cache_valid{false};
+    std::size_t cached_group_count{0};
+    std::uint64_t cached_group_hash{0};
+    bool group_cache_valid{false};
+
 private:
     cudaStream_t stream_{};
     bool stream_created_{false};
@@ -511,24 +535,76 @@ void ensure_acceleration_arrays(CudaWorkspace& workspace, std::size_t count) {
     workspace.az.ensure(count, "allocate CUDA acceleration z buffer");
 }
 
+void upload_static_mass_array(
+    CudaWorkspace& workspace,
+    const std::vector<Particle>& particles,
+    std::uint64_t mass_hash,
+    cudaStream_t stream
+) {
+    const std::size_t count = particles.size();
+    if (workspace.mass_cache_valid &&
+        workspace.cached_mass_count == count &&
+        workspace.cached_mass_hash == mass_hash) {
+        return;
+    }
+
+    workspace.host_mass.ensure(count, "allocate pinned host mass buffer");
+    for (std::size_t i = 0; i < count; ++i) {
+        workspace.host_mass.data()[i] = particles[i].mass;
+    }
+    workspace.mass.upload(workspace.host_mass.data(), count, stream, "allocate CUDA mass buffer", "copy mass to CUDA device");
+    workspace.cached_mass_count = count;
+    workspace.cached_mass_hash = mass_hash;
+    workspace.mass_cache_valid = true;
+}
+
+void upload_static_group_array(
+    CudaWorkspace& workspace,
+    const std::vector<Particle>& particles,
+    std::uint64_t group_hash,
+    cudaStream_t stream
+) {
+    const std::size_t count = particles.size();
+    if (workspace.group_cache_valid &&
+        workspace.cached_group_count == count &&
+        workspace.cached_group_hash == group_hash) {
+        return;
+    }
+
+    workspace.host_group_id.ensure(count, "allocate pinned host particle group buffer");
+    for (std::size_t i = 0; i < count; ++i) {
+        workspace.host_group_id.data()[i] = particles[i].group_id;
+    }
+    workspace.group_id.upload(
+        workspace.host_group_id.data(),
+        count,
+        stream,
+        "allocate CUDA particle group buffer",
+        "copy particle group to CUDA device"
+    );
+    workspace.cached_group_count = count;
+    workspace.cached_group_hash = group_hash;
+    workspace.group_cache_valid = true;
+}
+
 void upload_body_arrays(CudaWorkspace& workspace, const std::vector<Particle>& particles, cudaStream_t stream) {
     const std::size_t count = particles.size();
     workspace.host_x.ensure(count, "allocate pinned host body x buffer");
     workspace.host_y.ensure(count, "allocate pinned host body y buffer");
     workspace.host_z.ensure(count, "allocate pinned host body z buffer");
-    workspace.host_mass.ensure(count, "allocate pinned host body mass buffer");
 
+    std::uint64_t mass_hash = mix_hash(fnv_offset_basis, static_cast<std::uint64_t>(count));
     for (std::size_t i = 0; i < count; ++i) {
         workspace.host_x.data()[i] = particles[i].position.x;
         workspace.host_y.data()[i] = particles[i].position.y;
         workspace.host_z.data()[i] = particles[i].position.z;
-        workspace.host_mass.data()[i] = particles[i].mass;
+        mass_hash = mix_hash(mass_hash, double_bits(particles[i].mass));
     }
 
     workspace.x.upload(workspace.host_x.data(), count, stream, "allocate CUDA body x buffer", "copy body x to CUDA device");
     workspace.y.upload(workspace.host_y.data(), count, stream, "allocate CUDA body y buffer", "copy body y to CUDA device");
     workspace.z.upload(workspace.host_z.data(), count, stream, "allocate CUDA body z buffer", "copy body z to CUDA device");
-    workspace.mass.upload(workspace.host_mass.data(), count, stream, "allocate CUDA body mass buffer", "copy body mass to CUDA device");
+    upload_static_mass_array(workspace, particles, mass_hash, stream);
     ensure_acceleration_arrays(workspace, count);
 }
 
@@ -543,9 +619,9 @@ void upload_particle_arrays(CudaWorkspace& workspace, const std::vector<Particle
     workspace.host_ax.ensure(count, "allocate pinned host particle ax buffer");
     workspace.host_ay.ensure(count, "allocate pinned host particle ay buffer");
     workspace.host_az.ensure(count, "allocate pinned host particle az buffer");
-    workspace.host_mass.ensure(count, "allocate pinned host particle mass buffer");
-    workspace.host_group_id.ensure(count, "allocate pinned host particle group buffer");
 
+    std::uint64_t mass_hash = mix_hash(fnv_offset_basis, static_cast<std::uint64_t>(count));
+    std::uint64_t group_hash = mix_hash(fnv_offset_basis, static_cast<std::uint64_t>(count));
     for (std::size_t i = 0; i < count; ++i) {
         workspace.host_x.data()[i] = particles[i].position.x;
         workspace.host_y.data()[i] = particles[i].position.y;
@@ -556,8 +632,8 @@ void upload_particle_arrays(CudaWorkspace& workspace, const std::vector<Particle
         workspace.host_ax.data()[i] = particles[i].acceleration.x;
         workspace.host_ay.data()[i] = particles[i].acceleration.y;
         workspace.host_az.data()[i] = particles[i].acceleration.z;
-        workspace.host_mass.data()[i] = particles[i].mass;
-        workspace.host_group_id.data()[i] = particles[i].group_id;
+        mass_hash = mix_hash(mass_hash, double_bits(particles[i].mass));
+        group_hash = mix_hash(group_hash, static_cast<std::uint64_t>(particles[i].group_id));
     }
 
     workspace.x.upload(workspace.host_x.data(), count, stream, "allocate CUDA particle x buffer", "copy particle x to CUDA device");
@@ -569,8 +645,8 @@ void upload_particle_arrays(CudaWorkspace& workspace, const std::vector<Particle
     workspace.ax.upload(workspace.host_ax.data(), count, stream, "allocate CUDA particle ax buffer", "copy particle ax to CUDA device");
     workspace.ay.upload(workspace.host_ay.data(), count, stream, "allocate CUDA particle ay buffer", "copy particle ay to CUDA device");
     workspace.az.upload(workspace.host_az.data(), count, stream, "allocate CUDA particle az buffer", "copy particle az to CUDA device");
-    workspace.mass.upload(workspace.host_mass.data(), count, stream, "allocate CUDA particle mass buffer", "copy particle mass to CUDA device");
-    workspace.group_id.upload(workspace.host_group_id.data(), count, stream, "allocate CUDA particle group buffer", "copy particle group to CUDA device");
+    upload_static_mass_array(workspace, particles, mass_hash, stream);
+    upload_static_group_array(workspace, particles, group_hash, stream);
 }
 
 void download_acceleration_arrays(CudaWorkspace& workspace, std::vector<Particle>& particles, cudaStream_t stream) {
@@ -603,8 +679,6 @@ void download_particle_arrays(CudaWorkspace& workspace, std::vector<Particle>& p
     workspace.host_ax.ensure(count, "allocate pinned host particle ax buffer");
     workspace.host_ay.ensure(count, "allocate pinned host particle ay buffer");
     workspace.host_az.ensure(count, "allocate pinned host particle az buffer");
-    workspace.host_mass.ensure(count, "allocate pinned host particle mass buffer");
-    workspace.host_group_id.ensure(count, "allocate pinned host particle group buffer");
 
     workspace.x.download(workspace.host_x.data(), count, stream, "copy particle x from CUDA device");
     workspace.y.download(workspace.host_y.data(), count, stream, "copy particle y from CUDA device");
@@ -615,8 +689,6 @@ void download_particle_arrays(CudaWorkspace& workspace, std::vector<Particle>& p
     workspace.ax.download(workspace.host_ax.data(), count, stream, "copy particle ax from CUDA device");
     workspace.ay.download(workspace.host_ay.data(), count, stream, "copy particle ay from CUDA device");
     workspace.az.download(workspace.host_az.data(), count, stream, "copy particle az from CUDA device");
-    workspace.mass.download(workspace.host_mass.data(), count, stream, "copy particle mass from CUDA device");
-    workspace.group_id.download(workspace.host_group_id.data(), count, stream, "copy particle group from CUDA device");
     throw_on_cuda(cudaStreamSynchronize(stream), "synchronize CUDA particle downloads");
 
     for (std::size_t i = 0; i < count; ++i) {
@@ -635,8 +707,6 @@ void download_particle_arrays(CudaWorkspace& workspace, std::vector<Particle>& p
             workspace.host_ay.data()[i],
             workspace.host_az.data()[i],
         };
-        particles[i].mass = workspace.host_mass.data()[i];
-        particles[i].group_id = workspace.host_group_id.data()[i];
     }
 }
 
