@@ -131,7 +131,7 @@ Run the CUDA direct/P2P kernel when a CUDA device is available:
 solver = "cuda-direct"
 ```
 
-For larger GPU throughput tests, use `cuda-tree` or `cuda-fmm` and disable CSV/diagnostic output:
+For larger GPU throughput tests, use `cuda-tree` or `cuda-fmm`, set `fmm_expansion_order = 0` to select the compact monopole CUDA fast path, and disable CSV/diagnostic output:
 
 ```toml
 [simulation]

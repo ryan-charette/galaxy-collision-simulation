@@ -10,6 +10,8 @@ Implemented:
 - CPU fallback symbols when CUDA is unavailable,
 - runtime availability reporting from the CLI.
 
-Current tradeoff:
+Performance notes:
 
-- The tree/FMM builders still run on CPU, then flattened node and interaction-list data is copied to the GPU for per-particle force evaluation. For high-scale benchmarks, use `fmm_expansion_order = 0` and `[output] format = "none"` to avoid p=4 expansion and CSV/diagnostic overhead dominating the run.
+- The tree/FMM builders still run on CPU, then flattened node and interaction-list data is copied to the GPU for per-particle force evaluation.
+- `fmm_expansion_order = 0` selects a specialized monopole CUDA path with compact node buffers, compact position/mass input, acceleration-only output copies, and no CPU multipole-moment construction. This is the preferred high-scale benchmark mode.
+- `[output] format = "none"` avoids CSV and diagnostic overhead dominating large runs.

@@ -33,6 +33,19 @@ struct DeviceParticle {
     unsigned int group_id;
 };
 
+struct DeviceBody {
+    double x;
+    double y;
+    double z;
+    double mass;
+};
+
+struct DeviceAcceleration {
+    double ax;
+    double ay;
+    double az;
+};
+
 struct DeviceTreeNode {
     double center_x;
     double center_y;
@@ -43,6 +56,21 @@ struct DeviceTreeNode {
     double com_y;
     double com_z;
     double moments[35];
+    int children[8];
+    int particle_begin;
+    int particle_count;
+    int is_leaf;
+};
+
+struct DeviceMonopoleNode {
+    double center_x;
+    double center_y;
+    double center_z;
+    double half_width;
+    double mass;
+    double com_x;
+    double com_y;
+    double com_z;
     int children[8];
     int particle_begin;
     int particle_count;
@@ -78,6 +106,15 @@ DeviceParticle pack_particle(const Particle& particle) {
         particle.acceleration.z,
         particle.mass,
         particle.group_id,
+    };
+}
+
+DeviceBody pack_body(const Particle& particle) {
+    return DeviceBody{
+        particle.position.x,
+        particle.position.y,
+        particle.position.z,
+        particle.mass,
     };
 }
 
@@ -126,6 +163,25 @@ DeviceTreeNode pack_tree_node(const FlatTreeNode& node) {
     return device_node;
 }
 
+DeviceMonopoleNode pack_monopole_node(const FlatTreeNode& node) {
+    DeviceMonopoleNode device_node{};
+    device_node.center_x = node.center.x;
+    device_node.center_y = node.center.y;
+    device_node.center_z = node.center.z;
+    device_node.half_width = node.half_width;
+    device_node.mass = node.mass;
+    device_node.com_x = node.center_of_mass.x;
+    device_node.com_y = node.center_of_mass.y;
+    device_node.com_z = node.center_of_mass.z;
+    for (std::size_t i = 0; i < node.children.size(); ++i) {
+        device_node.children[i] = node.children[i];
+    }
+    device_node.particle_begin = checked_int(node.particle_begin, "tree node particle offset");
+    device_node.particle_count = checked_int(node.particle_count, "tree node particle count");
+    device_node.is_leaf = node.is_leaf ? 1 : 0;
+    return device_node;
+}
+
 DeviceFmmLeaf pack_fmm_leaf(const FlatFmmLeaf& leaf) {
     return DeviceFmmLeaf{
         leaf.node_index,
@@ -143,6 +199,24 @@ std::vector<DeviceTreeNode> pack_tree_nodes(const FlatTreeData& tree) {
         nodes.push_back(pack_tree_node(node));
     }
     return nodes;
+}
+
+std::vector<DeviceMonopoleNode> pack_monopole_nodes(const FlatTreeData& tree) {
+    std::vector<DeviceMonopoleNode> nodes;
+    nodes.reserve(tree.nodes.size());
+    for (const FlatTreeNode& node : tree.nodes) {
+        nodes.push_back(pack_monopole_node(node));
+    }
+    return nodes;
+}
+
+std::vector<DeviceBody> pack_bodies(const std::vector<Particle>& particles) {
+    std::vector<DeviceBody> bodies;
+    bodies.reserve(particles.size());
+    for (const Particle& particle : particles) {
+        bodies.push_back(pack_body(particle));
+    }
+    return bodies;
 }
 
 std::vector<int> pack_particle_indices(const std::vector<std::size_t>& indices) {
@@ -281,6 +355,27 @@ __device__ DeviceVec3 device_softened_acceleration(
     const double inv_r3 = inv_r * inv_r * inv_r;
     const double scale = gravitational_constant * source_mass * inv_r3;
     return {dx * scale, dy * scale, dz * scale};
+}
+
+__device__ DeviceVec3 device_monopole_acceleration(
+    double tx,
+    double ty,
+    double tz,
+    const DeviceMonopoleNode& source,
+    double gravitational_constant,
+    double softening
+) {
+    return device_softened_acceleration(
+        tx,
+        ty,
+        tz,
+        source.com_x,
+        source.com_y,
+        source.com_z,
+        source.mass,
+        gravitational_constant,
+        softening
+    );
 }
 
 __device__ void device_inv_r3_polynomial(DeviceVec3 delta, double softening, double* result) {
@@ -454,6 +549,38 @@ __device__ DeviceVec3 device_direct_acceleration_for_target(
     return acceleration;
 }
 
+__device__ DeviceVec3 device_direct_acceleration_for_target(
+    const DeviceBody* bodies,
+    int count,
+    int target_index,
+    double gravitational_constant,
+    double softening
+) {
+    const DeviceBody& target = bodies[target_index];
+    DeviceVec3 acceleration{0.0, 0.0, 0.0};
+    for (int j = 0; j < count; ++j) {
+        if (j == target_index) {
+            continue;
+        }
+        const DeviceBody& source = bodies[j];
+        const DeviceVec3 contribution = device_softened_acceleration(
+            target.x,
+            target.y,
+            target.z,
+            source.x,
+            source.y,
+            source.z,
+            source.mass,
+            gravitational_constant,
+            softening
+        );
+        acceleration.x += contribution.x;
+        acceleration.y += contribution.y;
+        acceleration.z += contribution.z;
+    }
+    return acceleration;
+}
+
 __global__ void direct_acceleration_kernel(
     DeviceParticle* particles,
     int count,
@@ -612,6 +739,118 @@ __global__ void tree_acceleration_kernel(
     particles[target_index].az = acceleration.z;
 }
 
+__global__ void tree_monopole_acceleration_kernel(
+    const DeviceBody* bodies,
+    DeviceAcceleration* accelerations,
+    int count,
+    const DeviceMonopoleNode* nodes,
+    int node_count,
+    const int* particle_indices,
+    double gravitational_constant,
+    double softening,
+    double theta
+) {
+    const int target_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (target_index >= count || node_count <= 0) {
+        return;
+    }
+
+    const DeviceBody& target = bodies[target_index];
+    DeviceVec3 acceleration{0.0, 0.0, 0.0};
+    int stack[tree_stack_capacity];
+    int top = 0;
+    bool stack_overflow = false;
+    stack[top++] = 0;
+
+    while (top > 0 && !stack_overflow) {
+        const int node_index = stack[--top];
+        if (node_index < 0 || node_index >= node_count) {
+            continue;
+        }
+
+        const DeviceMonopoleNode& node = nodes[node_index];
+        if (node.mass <= 0.0) {
+            continue;
+        }
+
+        if (node.is_leaf != 0) {
+            for (int offset = 0; offset < node.particle_count; ++offset) {
+                const int source_index = particle_indices[node.particle_begin + offset];
+                if (source_index == target_index) {
+                    continue;
+                }
+                const DeviceBody& source = bodies[source_index];
+                const DeviceVec3 contribution = device_softened_acceleration(
+                    target.x,
+                    target.y,
+                    target.z,
+                    source.x,
+                    source.y,
+                    source.z,
+                    source.mass,
+                    gravitational_constant,
+                    softening
+                );
+                acceleration.x += contribution.x;
+                acceleration.y += contribution.y;
+                acceleration.z += contribution.z;
+            }
+            continue;
+        }
+
+        const double dx = node.com_x - target.x;
+        const double dy = node.com_y - target.y;
+        const double dz = node.com_z - target.z;
+        const double distance = sqrt(dx * dx + dy * dy + dz * dz);
+        const double node_width = 2.0 * node.half_width;
+        const bool target_inside_node =
+            fabs(target.x - node.center_x) <= node.half_width &&
+            fabs(target.y - node.center_y) <= node.half_width &&
+            fabs(target.z - node.center_z) <= node.half_width;
+
+        if (!target_inside_node && distance > 0.0 && node_width / distance < theta) {
+            const DeviceVec3 contribution = device_monopole_acceleration(
+                target.x,
+                target.y,
+                target.z,
+                node,
+                gravitational_constant,
+                softening
+            );
+            acceleration.x += contribution.x;
+            acceleration.y += contribution.y;
+            acceleration.z += contribution.z;
+            continue;
+        }
+
+        for (int child = 0; child < 8; ++child) {
+            const int child_index = node.children[child];
+            if (child_index < 0) {
+                continue;
+            }
+            if (top >= tree_stack_capacity) {
+                stack_overflow = true;
+                break;
+            }
+            stack[top++] = child_index;
+        }
+    }
+
+    if (stack_overflow) {
+        acceleration = device_direct_acceleration_for_target(
+            bodies,
+            count,
+            target_index,
+            gravitational_constant,
+            softening
+        );
+    }
+
+    accelerations[target_index].ax = acceleration.x;
+    accelerations[target_index].ay = acceleration.y;
+    accelerations[target_index].az = acceleration.z;
+}
+
 __global__ void fmm_acceleration_kernel(
     DeviceParticle* particles,
     int count,
@@ -689,6 +928,82 @@ __global__ void fmm_acceleration_kernel(
     particles[target_index].az = acceleration.z;
 }
 
+__global__ void fmm_monopole_acceleration_kernel(
+    const DeviceBody* bodies,
+    DeviceAcceleration* accelerations,
+    int count,
+    const DeviceMonopoleNode* nodes,
+    const int* particle_indices,
+    const DeviceFmmLeaf* leaves,
+    const int* far_node_indices,
+    const int* near_leaf_node_indices,
+    const int* particle_leaf_indices,
+    double gravitational_constant,
+    double softening
+) {
+    const int target_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (target_index >= count) {
+        return;
+    }
+
+    const int leaf_index = particle_leaf_indices[target_index];
+    if (leaf_index < 0) {
+        accelerations[target_index].ax = 0.0;
+        accelerations[target_index].ay = 0.0;
+        accelerations[target_index].az = 0.0;
+        return;
+    }
+
+    const DeviceBody& target = bodies[target_index];
+    const DeviceFmmLeaf& leaf = leaves[leaf_index];
+    DeviceVec3 acceleration{0.0, 0.0, 0.0};
+
+    for (int offset = 0; offset < leaf.far_count; ++offset) {
+        const int source_node_index = far_node_indices[leaf.far_begin + offset];
+        const DeviceVec3 contribution = device_monopole_acceleration(
+            target.x,
+            target.y,
+            target.z,
+            nodes[source_node_index],
+            gravitational_constant,
+            softening
+        );
+        acceleration.x += contribution.x;
+        acceleration.y += contribution.y;
+        acceleration.z += contribution.z;
+    }
+
+    for (int near_offset = 0; near_offset < leaf.near_count; ++near_offset) {
+        const int source_leaf_node_index = near_leaf_node_indices[leaf.near_begin + near_offset];
+        const DeviceMonopoleNode& source_leaf = nodes[source_leaf_node_index];
+        for (int offset = 0; offset < source_leaf.particle_count; ++offset) {
+            const int source_index = particle_indices[source_leaf.particle_begin + offset];
+            if (source_index == target_index) {
+                continue;
+            }
+            const DeviceBody& source = bodies[source_index];
+            const DeviceVec3 contribution = device_softened_acceleration(
+                target.x,
+                target.y,
+                target.z,
+                source.x,
+                source.y,
+                source.z,
+                source.mass,
+                gravitational_constant,
+                softening
+            );
+            acceleration.x += contribution.x;
+            acceleration.y += contribution.y;
+            acceleration.z += contribution.z;
+        }
+    }
+
+    accelerations[target_index].ax = acceleration.x;
+    accelerations[target_index].ay = acceleration.y;
+    accelerations[target_index].az = acceleration.z;
+}
+
 __global__ void drift_kernel(DeviceParticle* particles, int count, double dt) {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= count) {
@@ -728,6 +1043,27 @@ void copy_back(DeviceParticle* device_particles, std::vector<Particle>& particle
     }
 }
 
+void copy_accelerations_back(DeviceAcceleration* device_accelerations, std::vector<Particle>& particles) {
+    std::vector<DeviceAcceleration> host_accelerations(particles.size());
+    throw_on_cuda(
+        cudaMemcpy(
+            host_accelerations.data(),
+            device_accelerations,
+            host_accelerations.size() * sizeof(DeviceAcceleration),
+            cudaMemcpyDeviceToHost
+        ),
+        "copy accelerations from CUDA device"
+    );
+
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        particles[i].acceleration = {
+            host_accelerations[i].ax,
+            host_accelerations[i].ay,
+            host_accelerations[i].az,
+        };
+    }
+}
+
 DeviceParticle* copy_to_device(const std::vector<Particle>& particles) {
     std::vector<DeviceParticle> host_particles;
     host_particles.reserve(particles.size());
@@ -750,6 +1086,15 @@ DeviceParticle* copy_to_device(const std::vector<Particle>& particles) {
         "copy particles to CUDA device"
     );
     return device_particles;
+}
+
+DeviceAcceleration* allocate_device_accelerations(std::size_t count) {
+    DeviceAcceleration* device_accelerations = nullptr;
+    throw_on_cuda(
+        cudaMalloc(reinterpret_cast<void**>(&device_accelerations), count * sizeof(DeviceAcceleration)),
+        "allocate CUDA acceleration buffer"
+    );
+    return device_accelerations;
 }
 
 void launch_acceleration(DeviceParticle* device_particles, std::size_t count, const PhysicsParams& params) {
@@ -789,6 +1134,32 @@ void launch_tree_acceleration(
     throw_on_cuda(cudaGetLastError(), "launch CUDA tree acceleration kernel");
 }
 
+void launch_tree_monopole_acceleration(
+    const DeviceBody* device_bodies,
+    DeviceAcceleration* device_accelerations,
+    std::size_t count,
+    const DeviceMonopoleNode* device_nodes,
+    std::size_t node_count,
+    const int* device_particle_indices,
+    const PhysicsParams& params,
+    CudaTreeOptions options
+) {
+    const int threads = 256;
+    const int blocks = static_cast<int>((count + threads - 1) / threads);
+    tree_monopole_acceleration_kernel<<<blocks, threads>>>(
+        device_bodies,
+        device_accelerations,
+        checked_int(count, "particle count"),
+        device_nodes,
+        checked_int(node_count, "tree node count"),
+        device_particle_indices,
+        params.gravitational_constant,
+        params.softening,
+        options.theta
+    );
+    throw_on_cuda(cudaGetLastError(), "launch CUDA monopole tree acceleration kernel");
+}
+
 void launch_fmm_acceleration(
     DeviceParticle* device_particles,
     std::size_t count,
@@ -817,6 +1188,36 @@ void launch_fmm_acceleration(
         options.expansion_order
     );
     throw_on_cuda(cudaGetLastError(), "launch CUDA FMM acceleration kernel");
+}
+
+void launch_fmm_monopole_acceleration(
+    const DeviceBody* device_bodies,
+    DeviceAcceleration* device_accelerations,
+    std::size_t count,
+    const DeviceMonopoleNode* device_nodes,
+    const int* device_particle_indices,
+    const DeviceFmmLeaf* device_leaves,
+    const int* device_far_node_indices,
+    const int* device_near_leaf_node_indices,
+    const int* device_particle_leaf_indices,
+    const PhysicsParams& params
+) {
+    const int threads = 256;
+    const int blocks = static_cast<int>((count + threads - 1) / threads);
+    fmm_monopole_acceleration_kernel<<<blocks, threads>>>(
+        device_bodies,
+        device_accelerations,
+        checked_int(count, "particle count"),
+        device_nodes,
+        device_particle_indices,
+        device_leaves,
+        device_far_node_indices,
+        device_near_leaf_node_indices,
+        device_particle_leaf_indices,
+        params.gravitational_constant,
+        params.softening
+    );
+    throw_on_cuda(cudaGetLastError(), "launch CUDA monopole FMM acceleration kernel");
 }
 
 }  // namespace
@@ -916,19 +1317,63 @@ void compute_cuda_tree_accelerations(
         return;
     }
 
-    const std::vector<DeviceTreeNode> host_nodes = pack_tree_nodes(tree);
     const std::vector<int> host_particle_indices = pack_particle_indices(tree.particle_indices);
 
-    DeviceParticle* device_particles = copy_to_device(particles);
-    DeviceTreeNode* device_nodes = copy_vector_to_device(
-        host_nodes,
-        "allocate CUDA tree nodes",
-        "copy CUDA tree nodes"
-    );
     int* device_particle_indices = copy_vector_to_device(
         host_particle_indices,
         "allocate CUDA tree particle indices",
         "copy CUDA tree particle indices"
+    );
+
+    if (options.expansion_order <= 0) {
+        const std::vector<DeviceBody> host_bodies = pack_bodies(particles);
+        const std::vector<DeviceMonopoleNode> host_nodes = pack_monopole_nodes(tree);
+        DeviceBody* device_bodies = copy_vector_to_device(
+            host_bodies,
+            "allocate CUDA tree bodies",
+            "copy CUDA tree bodies"
+        );
+        DeviceAcceleration* device_accelerations = allocate_device_accelerations(particles.size());
+        DeviceMonopoleNode* device_nodes = copy_vector_to_device(
+            host_nodes,
+            "allocate CUDA monopole tree nodes",
+            "copy CUDA monopole tree nodes"
+        );
+
+        try {
+            launch_tree_monopole_acceleration(
+                device_bodies,
+                device_accelerations,
+                particles.size(),
+                device_nodes,
+                host_nodes.size(),
+                device_particle_indices,
+                params,
+                options
+            );
+            throw_on_cuda(cudaDeviceSynchronize(), "synchronize CUDA monopole tree acceleration kernel");
+            copy_accelerations_back(device_accelerations, particles);
+        } catch (...) {
+            cudaFree(device_nodes);
+            cudaFree(device_accelerations);
+            cudaFree(device_bodies);
+            cudaFree(device_particle_indices);
+            throw;
+        }
+
+        throw_on_cuda(cudaFree(device_nodes), "free CUDA monopole tree nodes");
+        throw_on_cuda(cudaFree(device_accelerations), "free CUDA acceleration buffer");
+        throw_on_cuda(cudaFree(device_bodies), "free CUDA tree bodies");
+        throw_on_cuda(cudaFree(device_particle_indices), "free CUDA tree particle indices");
+        return;
+    }
+
+    DeviceParticle* device_particles = copy_to_device(particles);
+    const std::vector<DeviceTreeNode> host_nodes = pack_tree_nodes(tree);
+    DeviceTreeNode* device_nodes = copy_vector_to_device(
+        host_nodes,
+        "allocate CUDA tree nodes",
+        "copy CUDA tree nodes"
     );
 
     try {
@@ -984,7 +1429,6 @@ void compute_cuda_fmm_accelerations(
         return;
     }
 
-    const std::vector<DeviceTreeNode> host_nodes = pack_tree_nodes(fmm.tree);
     const std::vector<int> host_particle_indices = pack_particle_indices(fmm.tree.particle_indices);
     std::vector<DeviceFmmLeaf> host_leaves;
     host_leaves.reserve(fmm.leaves.size());
@@ -992,12 +1436,6 @@ void compute_cuda_fmm_accelerations(
         host_leaves.push_back(pack_fmm_leaf(leaf));
     }
 
-    DeviceParticle* device_particles = copy_to_device(particles);
-    DeviceTreeNode* device_nodes = copy_vector_to_device(
-        host_nodes,
-        "allocate CUDA FMM nodes",
-        "copy CUDA FMM nodes"
-    );
     int* device_particle_indices = copy_vector_to_device(
         host_particle_indices,
         "allocate CUDA FMM particle indices",
@@ -1022,6 +1460,71 @@ void compute_cuda_fmm_accelerations(
         fmm.particle_leaf_indices,
         "allocate CUDA FMM particle-leaf indices",
         "copy CUDA FMM particle-leaf indices"
+    );
+
+    if (options.expansion_order <= 0) {
+        const std::vector<DeviceBody> host_bodies = pack_bodies(particles);
+        const std::vector<DeviceMonopoleNode> host_nodes = pack_monopole_nodes(fmm.tree);
+        DeviceBody* device_bodies = copy_vector_to_device(
+            host_bodies,
+            "allocate CUDA FMM bodies",
+            "copy CUDA FMM bodies"
+        );
+        DeviceAcceleration* device_accelerations = allocate_device_accelerations(particles.size());
+        DeviceMonopoleNode* device_nodes = copy_vector_to_device(
+            host_nodes,
+            "allocate CUDA monopole FMM nodes",
+            "copy CUDA monopole FMM nodes"
+        );
+
+        try {
+            launch_fmm_monopole_acceleration(
+                device_bodies,
+                device_accelerations,
+                particles.size(),
+                device_nodes,
+                device_particle_indices,
+                device_leaves,
+                device_far_node_indices,
+                device_near_leaf_node_indices,
+                device_particle_leaf_indices,
+                params
+            );
+            throw_on_cuda(cudaDeviceSynchronize(), "synchronize CUDA monopole FMM acceleration kernel");
+            copy_accelerations_back(device_accelerations, particles);
+        } catch (...) {
+            cudaFree(device_nodes);
+            cudaFree(device_accelerations);
+            cudaFree(device_bodies);
+            cudaFree(device_particle_leaf_indices);
+            cudaFree(device_near_leaf_node_indices);
+            cudaFree(device_far_node_indices);
+            cudaFree(device_leaves);
+            cudaFree(device_particle_indices);
+            throw;
+        }
+
+        throw_on_cuda(cudaFree(device_nodes), "free CUDA monopole FMM nodes");
+        throw_on_cuda(cudaFree(device_accelerations), "free CUDA acceleration buffer");
+        throw_on_cuda(cudaFree(device_bodies), "free CUDA FMM bodies");
+        throw_on_cuda(cudaFree(device_particle_leaf_indices), "free CUDA FMM particle-leaf indices");
+        if (device_near_leaf_node_indices != nullptr) {
+            throw_on_cuda(cudaFree(device_near_leaf_node_indices), "free CUDA FMM near-list indices");
+        }
+        if (device_far_node_indices != nullptr) {
+            throw_on_cuda(cudaFree(device_far_node_indices), "free CUDA FMM far-list indices");
+        }
+        throw_on_cuda(cudaFree(device_leaves), "free CUDA FMM leaves");
+        throw_on_cuda(cudaFree(device_particle_indices), "free CUDA FMM particle indices");
+        return;
+    }
+
+    DeviceParticle* device_particles = copy_to_device(particles);
+    const std::vector<DeviceTreeNode> host_nodes = pack_tree_nodes(fmm.tree);
+    DeviceTreeNode* device_nodes = copy_vector_to_device(
+        host_nodes,
+        "allocate CUDA FMM nodes",
+        "copy CUDA FMM nodes"
     );
 
     try {
