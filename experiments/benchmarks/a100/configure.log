@@ -1,0 +1,22 @@
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Looking for a CUDA compiler
+-- Looking for a CUDA compiler - /usr/local/cuda/bin/nvcc
+-- The CUDA compiler identification is NVIDIA 13.0.88
+-- Detecting CUDA compiler ABI info
+-- Detecting CUDA compiler ABI info - done
+-- Check for working CUDA compiler: /usr/local/cuda/bin/nvcc - skipped
+-- Detecting CUDA compile features
+-- Detecting CUDA compile features - done
+-- CUDA found: /usr/local/cuda/bin/nvcc
+-- Build summary:
+--   C++ standard: 17
+--   MPI enabled:  0
+--   CUDA enabled: 1
+-- Configuring done (5.5s)
+-- Generating done (0.0s)
+-- Build files have been written to: /workspace/galaxy-collision-simulation-main/galaxy-collision-simulation-main/build-a100

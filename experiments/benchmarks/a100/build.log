@@ -1,0 +1,27 @@
+[  4%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/core/config.cpp.o
+[  9%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/core/diagnostics.cpp.o
+[ 13%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/core/integrator.cpp.o
+[ 18%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/core/initial_conditions.cpp.o
+[ 22%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/core/simulation_info.cpp.o
+[ 27%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/fmm/multipole.cpp.o
+[ 31%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/cuda/cuda_solver_stub.cpp.o
+[ 40%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/fmm/fmm_solver.cpp.o
+[ 45%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/io/snapshot_writer.cpp.o
+[ 45%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/direct/direct_solver.cpp.o
+[ 50%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/mpi/distributed_solver.cpp.o
+[ 54%] Building CXX object CMakeFiles/fmm_galaxy_core.dir/cpp/fmm/quadtree.cpp.o
+[ 59%] Linking CXX static library libfmm_galaxy_core.a
+[ 59%] Built target fmm_galaxy_core
+[ 63%] Building CUDA object CMakeFiles/fmm_galaxy_cuda.dir/cpp/cuda/cuda_solver.cu.o
+[ 68%] Building CUDA object CMakeFiles/fmm_galaxy_cuda.dir/cpp/cuda/cuda_smoke.cu.o
+[ 72%] Linking CXX static library libfmm_galaxy_cuda.a
+[ 72%] Built target fmm_galaxy_cuda
+[ 81%] Building CXX object CMakeFiles/fmm_galaxy_smoke.dir/cpp/core/smoke_main.cpp.o
+[ 81%] Building CXX object CMakeFiles/fmm_galaxy_sim.dir/cpp/core/main.cpp.o
+[ 86%] Building CXX object CMakeFiles/fmm_galaxy_tests.dir/cpp/tests/smoke_tests.cpp.o
+[ 90%] Linking CXX executable fmm_galaxy_smoke
+[ 90%] Built target fmm_galaxy_smoke
+[ 95%] Linking CXX executable fmm_galaxy_tests
+[100%] Linking CXX executable fmm_galaxy_sim
+[100%] Built target fmm_galaxy_tests
+[100%] Built target fmm_galaxy_sim
