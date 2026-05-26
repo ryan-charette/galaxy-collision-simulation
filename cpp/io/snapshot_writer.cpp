@@ -1,5 +1,6 @@
 #include "io/snapshot_writer.hpp"
 
+#include <cstdlib>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -20,22 +21,94 @@ std::string escaped_json(const std::string& value) {
     return escaped;
 }
 
-std::string snapshot_filename(int step) {
+std::string snapshot_stem(int step) {
     std::ostringstream name;
-    name << "snapshot_" << std::setw(6) << std::setfill('0') << step << ".csv";
+    name << "snapshot_" << std::setw(6) << std::setfill('0') << step;
     return name.str();
+}
+
+std::string snapshot_filename(int step, OutputFormat format) {
+    return snapshot_stem(step) + (format == OutputFormat::Parquet ? ".parquet" : ".csv");
+}
+
+std::string quote_command_arg(const std::string& value) {
+    std::string quoted = "\"";
+    for (const char ch : value) {
+        if (ch == '"') {
+            quoted.push_back('\\');
+        }
+        quoted.push_back(ch);
+    }
+    quoted.push_back('"');
+    return quoted;
+}
+
+void write_csv_snapshot_file(
+    const std::filesystem::path& path,
+    double time,
+    const std::vector<Particle>& particles
+) {
+    std::ofstream output(path, std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error("Could not write snapshot output: " + path.string());
+    }
+
+    output << std::setprecision(17);
+    output << "# time=" << time << "\n";
+    output << "id,group_id,mass,x,y,z,vx,vy,vz,ax,ay,az\n";
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        const auto& particle = particles[i];
+        output << i << ','
+               << particle.group_id << ','
+               << particle.mass << ','
+               << particle.position.x << ','
+               << particle.position.y << ','
+               << particle.position.z << ','
+               << particle.velocity.x << ','
+               << particle.velocity.y << ','
+               << particle.velocity.z << ','
+               << particle.acceleration.x << ','
+               << particle.acceleration.y << ','
+               << particle.acceleration.z << '\n';
+    }
+}
+
+bool run_parquet_converter(
+    const std::filesystem::path& csv_path,
+    const std::filesystem::path& parquet_path,
+    int step,
+    double time
+) {
+    std::vector<std::string> python_commands;
+    if (const char* configured_python = std::getenv("FMM_GALAXY_PYTHON")) {
+        python_commands.emplace_back(quote_command_arg(configured_python));
+    }
+    python_commands.emplace_back("python");
+    python_commands.emplace_back("python3");
+    python_commands.emplace_back("py -3");
+
+    for (const auto& python : python_commands) {
+        std::ostringstream command;
+        command << python
+                << " -m python.utils.parquet_io"
+                << " --input " << quote_command_arg(csv_path.string())
+                << " --output " << quote_command_arg(parquet_path.string())
+                << " --step " << step
+                << " --time " << std::setprecision(17) << time;
+        if (std::system(command.str().c_str()) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace
 
 SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(config.output.directory) {
-    enabled_ = config.output.format != "none";
+    format_ = config.output.format;
+    enabled_ = format_ != OutputFormat::None;
     if (!enabled_) {
         return;
-    }
-
-    if (config.output.format != "csv") {
-        throw std::runtime_error("Only csv snapshot output or format=\"none\" is implemented");
     }
 
     std::filesystem::create_directories(directory_);
@@ -69,6 +142,7 @@ void SnapshotWriter::write_metadata(const SimulationConfig& config, std::size_t 
     metadata << "  \"steps\": " << config.steps << ",\n";
     metadata << "  \"dt\": " << config.dt << ",\n";
     metadata << "  \"snapshot_every\": " << config.snapshot_every << ",\n";
+    metadata << "  \"output_format\": \"" << output_format_name(config.output.format) << "\",\n";
     metadata << "  \"dim\": " << config.dim << ",\n";
     metadata << "  \"gravitational_constant\": " << config.physics.gravitational_constant << ",\n";
     metadata << "  \"softening\": " << config.physics.softening << ",\n";
@@ -83,29 +157,27 @@ void SnapshotWriter::write_snapshot(int step, double time, const std::vector<Par
         return;
     }
 
-    std::ofstream output(directory_ / snapshot_filename(step), std::ios::trunc);
-    if (!output) {
-        throw std::runtime_error("Could not write snapshot output in " + directory_.string());
+    const auto output_path = directory_ / snapshot_filename(step, format_);
+    if (format_ == OutputFormat::Csv) {
+        write_csv_snapshot_file(output_path, time, particles);
+        return;
     }
 
-    output << std::setprecision(17);
-    output << "# time=" << time << "\n";
-    output << "id,group_id,mass,x,y,z,vx,vy,vz,ax,ay,az\n";
-    for (std::size_t i = 0; i < particles.size(); ++i) {
-        const auto& particle = particles[i];
-        output << i << ','
-               << particle.group_id << ','
-               << particle.mass << ','
-               << particle.position.x << ','
-               << particle.position.y << ','
-               << particle.position.z << ','
-               << particle.velocity.x << ','
-               << particle.velocity.y << ','
-               << particle.velocity.z << ','
-               << particle.acceleration.x << ','
-               << particle.acceleration.y << ','
-               << particle.acceleration.z << '\n';
+    if (format_ == OutputFormat::Parquet) {
+        const auto temp_csv_path = directory_ / (snapshot_stem(step) + ".parquet.tmp.csv");
+        write_csv_snapshot_file(temp_csv_path, time, particles);
+        const bool converted = run_parquet_converter(temp_csv_path, output_path, step, time);
+        std::filesystem::remove(temp_csv_path);
+        if (!converted) {
+            throw std::runtime_error(
+                "Could not convert snapshot to Parquet. Install pyarrow and ensure python is on PATH, "
+                "or set FMM_GALAXY_PYTHON to the Python executable."
+            );
+        }
+        return;
     }
+
+    throw std::runtime_error("Unknown snapshot output format");
 }
 
 void SnapshotWriter::write_diagnostics(
