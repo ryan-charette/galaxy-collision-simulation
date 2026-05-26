@@ -21,6 +21,10 @@ std::string escaped_json(const std::string& value) {
     return escaped;
 }
 
+const char* json_bool(bool value) {
+    return value ? "true" : "false";
+}
+
 std::string snapshot_stem(int step) {
     std::ostringstream name;
     name << "snapshot_" << std::setw(6) << std::setfill('0') << step;
@@ -107,11 +111,10 @@ bool run_parquet_converter(
 SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(config.output.directory) {
     format_ = config.output.format;
     enabled_ = format_ != OutputFormat::None;
+    std::filesystem::create_directories(directory_);
     if (!enabled_) {
         return;
     }
-
-    std::filesystem::create_directories(directory_);
 
     diagnostics_stream_.open(directory_ / "diagnostics.csv", std::ios::trunc);
     if (!diagnostics_stream_) {
@@ -125,11 +128,11 @@ SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(conf
         << "angular_momentum_x,angular_momentum_y,angular_momentum_z\n";
 }
 
-void SnapshotWriter::write_metadata(const SimulationConfig& config, std::size_t particle_count) {
-    if (!enabled_) {
-        return;
-    }
-
+void SnapshotWriter::write_metadata(
+    const SimulationConfig& config,
+    std::size_t particle_count,
+    const RunProvenance& provenance
+) {
     std::ofstream metadata(directory_ / "metadata.json", std::ios::trunc);
     if (!metadata) {
         throw std::runtime_error("Could not write metadata output in " + directory_.string());
@@ -148,7 +151,25 @@ void SnapshotWriter::write_metadata(const SimulationConfig& config, std::size_t 
     metadata << "  \"softening\": " << config.physics.softening << ",\n";
     metadata << "  \"tree_theta\": " << config.tree_theta << ",\n";
     metadata << "  \"tree_leaf_capacity\": " << config.tree_leaf_capacity << ",\n";
-    metadata << "  \"fmm_expansion_order\": " << config.fmm_expansion_order << "\n";
+    metadata << "  \"fmm_expansion_order\": " << config.fmm_expansion_order << ",\n";
+    metadata << "  \"git_commit\": \"" << escaped_json(provenance.git_commit) << "\",\n";
+    metadata << "  \"git_branch\": \"" << escaped_json(provenance.git_branch) << "\",\n";
+    metadata << "  \"git_dirty\": " << json_bool(provenance.git_dirty) << ",\n";
+    metadata << "  \"build_type\": \"" << escaped_json(provenance.build_type) << "\",\n";
+    metadata << "  \"compiler\": \"" << escaped_json(provenance.compiler) << "\",\n";
+    metadata << "  \"compiler_version\": \"" << escaped_json(provenance.compiler_version) << "\",\n";
+    metadata << "  \"cmake_options\": {\n";
+    metadata << "    \"ENABLE_MPI\": " << json_bool(provenance.cmake_enable_mpi) << ",\n";
+    metadata << "    \"ENABLE_CUDA\": " << json_bool(provenance.cmake_enable_cuda) << "\n";
+    metadata << "  },\n";
+    metadata << "  \"cuda_available\": " << json_bool(provenance.cuda_available) << ",\n";
+    metadata << "  \"cuda_device_name\": \"" << escaped_json(provenance.cuda_device_name) << "\",\n";
+    metadata << "  \"mpi_enabled\": " << json_bool(provenance.mpi_enabled) << ",\n";
+    metadata << "  \"rank_count\": " << provenance.rank_count << ",\n";
+    metadata << "  \"hostname\": \"" << escaped_json(provenance.hostname) << "\",\n";
+    metadata << "  \"timestamp_utc\": \"" << escaped_json(provenance.timestamp_utc) << "\",\n";
+    metadata << "  \"config_path\": \"" << escaped_json(provenance.config_path) << "\",\n";
+    metadata << "  \"config_sha256\": \"" << escaped_json(provenance.config_sha256) << "\"\n";
     metadata << "}\n";
 }
 
@@ -189,24 +210,3 @@ void SnapshotWriter::write_diagnostics(
     if (!enabled_) {
         return;
     }
-
-    diagnostics_stream_ << std::setprecision(17)
-                        << step << ','
-                        << time << ','
-                        << particle_count << ','
-                        << diagnostics.total_mass << ','
-                        << diagnostics.kinetic_energy << ','
-                        << diagnostics.potential_energy << ','
-                        << diagnostics.total_energy << ','
-                        << diagnostics.momentum.x << ','
-                        << diagnostics.momentum.y << ','
-                        << diagnostics.momentum.z << ','
-                        << diagnostics.center_of_mass.x << ','
-                        << diagnostics.center_of_mass.y << ','
-                        << diagnostics.center_of_mass.z << ','
-                        << diagnostics.angular_momentum.x << ','
-                        << diagnostics.angular_momentum.y << ','
-                        << diagnostics.angular_momentum.z << '\n';
-}
-
-}  // namespace fmmgalaxy
