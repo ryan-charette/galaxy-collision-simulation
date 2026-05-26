@@ -36,7 +36,10 @@ snapshot_*.parquet
 diagnostics.csv
 metadata.json
 experiments/**/outputs/
+experiments/accuracy/
+experiments/accuracy_*/
 experiments/benchmarks/
+experiments/sweeps/
 experiments/**/snapshots/
 experiments/**/snapshot_*.csv
 experiments/**/snapshot_*.parquet
