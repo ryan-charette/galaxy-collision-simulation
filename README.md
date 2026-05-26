@@ -359,6 +359,10 @@ hardware/build metadata, wall-clock timing, particle-steps/s, and energy/momentu
 drift fields. Use `--limit N` for a smoke subset and `--resume` to reuse completed
 run directories.
 
+Pass `--dataset-type force_error`, `--dataset-type per_step_diagnostics`, or
+`--dataset-type all` to materialize the other Phase 1 datasets from the same
+sweep outputs. Stable schemas are documented in `docs/ml_datasets.md`.
+
 Generate solver crossover plots and tables from runtime and accuracy benchmark
 CSVs:
 
