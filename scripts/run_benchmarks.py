@@ -25,6 +25,12 @@ class BenchmarkCase:
     seconds: float
     git_commit: str
     config_sha256: str
+    build_type: str
+    compiler: str
+    cuda_available: bool | str
+    cuda_device_name: str
+    mpi_enabled: bool | str
+    hostname: str
 
     @property
     def steps_per_second(self) -> float:
@@ -157,6 +163,12 @@ def run_case(
         seconds,
         metadata.get("git_commit", "unavailable"),
         metadata.get("config_sha256", "unavailable"),
+        metadata.get("build_type", "unknown"),
+        metadata.get("compiler", "unknown"),
+        metadata.get("cuda_available", ""),
+        metadata.get("cuda_device_name", ""),
+        metadata.get("mpi_enabled", ""),
+        metadata.get("hostname", "unknown"),
     )
 
 
@@ -176,6 +188,12 @@ def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
                 "particle_steps_per_second",
                 "git_commit",
                 "config_sha256",
+                "build_type",
+                "compiler",
+                "cuda_available",
+                "cuda_device_name",
+                "mpi_enabled",
+                "hostname",
             ]
         )
         for result in results:
@@ -191,6 +209,12 @@ def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
                     f"{result.particle_steps_per_second:.3f}",
                     result.git_commit,
                     result.config_sha256,
+                    result.build_type,
+                    result.compiler,
+                    result.cuda_available,
+                    result.cuda_device_name,
+                    result.mpi_enabled,
+                    result.hostname,
                 ]
             )
 
@@ -265,27 +289,3 @@ def write_markdown(path: Path, results: list[BenchmarkCase]) -> None:
         )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--executable", type=Path, default=Path("build-readme-gif/fmm_galaxy_sim.exe"))
-    parser.add_argument("--work-dir", type=Path, default=Path("experiments/benchmarks/local_cpu"))
-    parser.add_argument("--csv", type=Path, default=Path("docs/benchmarks/local_cpu_benchmark.csv"))
-    parser.add_argument("--markdown", type=Path, default=Path("docs/benchmarks/local_cpu_benchmark.md"))
-    parser.add_argument("--solvers", nargs="+", default=["direct", "tree", "fmm"])
-    parser.add_argument("--particles", nargs="+", type=int, default=[250, 500, 1000])
-    parser.add_argument("--steps", type=int, default=20)
-    parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--output-format", choices=["csv", "parquet", "none"], default="csv")
-    parser.add_argument("--output-formats", nargs="+", choices=["csv", "parquet", "none"], default=None)
-    parser.add_argument("--theta", type=float, default=0.58)
-    parser.add_argument("--leaf-capacity", type=int, default=16)
-    parser.add_argument("--expansion-order", type=int, choices=[0, 2, 4], default=4)
-    args = parser.parse_args()
-
-    if not args.executable.exists():
-        raise FileNotFoundError(f"Executable not found: {args.executable}")
-
-    results: list[BenchmarkCase] = []
-    output_formats = args.output_formats if args.output_formats is not None else [args.output_format]
