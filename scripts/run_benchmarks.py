@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import platform
 import statistics
@@ -22,6 +23,8 @@ class BenchmarkCase:
     steps: int
     replicate: int
     seconds: float
+    git_commit: str
+    config_sha256: str
 
     @property
     def steps_per_second(self) -> float:
@@ -143,7 +146,18 @@ def run_case(
             f"Benchmark failed for solver={solver} particles={particles} replicate={replicate}\n"
             + completed.stdout
         )
-    return BenchmarkCase(output_format, solver, particles, steps, replicate, seconds)
+    metadata_path = output_dir / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+    return BenchmarkCase(
+        output_format,
+        solver,
+        particles,
+        steps,
+        replicate,
+        seconds,
+        metadata.get("git_commit", "unavailable"),
+        metadata.get("config_sha256", "unavailable"),
+    )
 
 
 def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
@@ -160,6 +174,8 @@ def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
                 "seconds",
                 "steps_per_second",
                 "particle_steps_per_second",
+                "git_commit",
+                "config_sha256",
             ]
         )
         for result in results:
@@ -173,11 +189,13 @@ def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
                     f"{result.seconds:.6f}",
                     f"{result.steps_per_second:.6f}",
                     f"{result.particle_steps_per_second:.3f}",
+                    result.git_commit,
+                    result.config_sha256,
                 ]
             )
 
 
-def summarize(results: list[BenchmarkCase]) -> list[tuple[str, str, int, int, float, float, float]]:
+def summarize(results: list[BenchmarkCase]) -> list[tuple[str, str, int, int, float, float, float, str]]:
     grouped: dict[tuple[str, str, int, int], list[BenchmarkCase]] = {}
     for result in results:
         grouped.setdefault((result.output_format, result.solver, result.particles, result.steps), []).append(result)
@@ -206,8 +224,19 @@ def summarize(results: list[BenchmarkCase]) -> list[tuple[str, str, int, int, fl
         median_seconds = statistics.median(seconds)
         steps_per_second = steps / median_seconds
         particle_steps_per_second = particles * steps_per_second
+        commits = {case.git_commit for case in cases}
+        git_commit = commits.pop() if len(commits) == 1 else "mixed"
         rows.append(
-            (output_format, solver, particles, steps, median_seconds, steps_per_second, particle_steps_per_second)
+            (
+                output_format,
+                solver,
+                particles,
+                steps,
+                median_seconds,
+                steps_per_second,
+                particle_steps_per_second,
+                git_commit,
+            )
         )
     return rows
 
@@ -225,13 +254,14 @@ def write_markdown(path: Path, results: list[BenchmarkCase]) -> None:
         "",
         "Build: Release executable. CUDA use depends on the selected solver and build configuration.",
         "",
-        "| Output | Solver | Particles | Steps | Median wall time (s) | Steps/s | Particle-steps/s |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| Output | Solver | Particles | Steps | Median wall time (s) | Steps/s | Particle-steps/s | Commit |",
+        "|---|---|---:|---:|---:|---:|---:|---|",
     ]
-    for output_format, solver, particles, steps, seconds, steps_per_second, particle_steps_per_second in rows:
+    for output_format, solver, particles, steps, seconds, steps_per_second, particle_steps_per_second, git_commit in rows:
+        short_commit = git_commit[:12] if git_commit not in {"mixed", "unavailable"} else git_commit
         lines.append(
             f"| `{output_format}` | `{solver}` | {particles} | {steps} | {seconds:.3f} | "
-            f"{steps_per_second:.2f} | {particle_steps_per_second:,.0f} |"
+            f"{steps_per_second:.2f} | {particle_steps_per_second:,.0f} | `{short_commit}` |"
         )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -259,33 +289,3 @@ def main() -> None:
 
     results: list[BenchmarkCase] = []
     output_formats = args.output_formats if args.output_formats is not None else [args.output_format]
-    for output_format in output_formats:
-        for particles in args.particles:
-            for solver in args.solvers:
-                for replicate in range(1, args.repetitions + 1):
-                    result = run_case(
-                        args.executable,
-                        solver,
-                        particles,
-                        args.steps,
-                        replicate,
-                        args.work_dir,
-                        output_format,
-                        args.theta,
-                        args.leaf_capacity,
-                        args.expansion_order,
-                    )
-                    results.append(result)
-                    print(
-                        f"{output_format:>7} {solver:>6} n={particles:<5} run={replicate} "
-                        f"{result.seconds:.3f}s ({result.steps_per_second:.2f} steps/s)"
-                    )
-
-    write_csv(args.csv, results)
-    write_markdown(args.markdown, results)
-    print(f"Wrote {args.csv}")
-    print(f"Wrote {args.markdown}")
-
-
-if __name__ == "__main__":
-    main()
