@@ -39,6 +39,8 @@ experiments/**/outputs/
 experiments/accuracy/
 experiments/accuracy_*/
 experiments/benchmarks/
+experiments/crossover/
+experiments/crossover_*/
 experiments/sweeps/
 experiments/**/snapshots/
 experiments/**/snapshot_*.csv
