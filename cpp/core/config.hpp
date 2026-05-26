@@ -11,9 +11,18 @@
 
 namespace fmmgalaxy {
 
+enum class OutputFormat {
+    Csv,
+    Parquet,
+    None,
+};
+
+OutputFormat parse_output_format(const std::string& value);
+std::string output_format_name(OutputFormat format);
+
 struct OutputConfig {
     std::filesystem::path directory{"experiments/validation/smoke_test"};
-    std::string format{"csv"};
+    OutputFormat format{OutputFormat::Csv};
 };
 
 struct SimulationConfig {
