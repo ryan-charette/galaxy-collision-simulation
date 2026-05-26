@@ -32,12 +32,14 @@ interactive_galaxy_viewer.html
 !docs/assets/*.png
 
 snapshot_*.csv
+snapshot_*.parquet
 diagnostics.csv
 metadata.json
 experiments/**/outputs/
 experiments/benchmarks/
 experiments/**/snapshots/
 experiments/**/snapshot_*.csv
+experiments/**/snapshot_*.parquet
 experiments/**/diagnostics.csv
 experiments/**/metadata.json
 test_output/
