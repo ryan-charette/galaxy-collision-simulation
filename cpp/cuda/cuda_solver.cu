@@ -1553,6 +1553,24 @@ bool cuda_solver_available() {
     return status == cudaSuccess && device_count > 0;
 }
 
+std::string cuda_device_name() {
+    int device_count = 0;
+    if (cudaGetDeviceCount(&device_count) != cudaSuccess || device_count <= 0) {
+        return "";
+    }
+
+    int device = 0;
+    if (cudaGetDevice(&device) != cudaSuccess || device < 0 || device >= device_count) {
+        device = 0;
+    }
+
+    cudaDeviceProp properties{};
+    if (cudaGetDeviceProperties(&properties, device) != cudaSuccess) {
+        return "";
+    }
+    return properties.name;
+}
+
 void compute_cuda_direct_accelerations(std::vector<Particle>& particles, const PhysicsParams& params) {
     if (particles.empty()) {
         return;
