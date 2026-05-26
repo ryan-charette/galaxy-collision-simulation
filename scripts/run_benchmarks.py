@@ -16,6 +16,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class BenchmarkCase:
+    output_format: str
     solver: str
     particles: int
     steps: int
@@ -111,8 +112,8 @@ def run_case(
     leaf_capacity: int,
     expansion_order: int,
 ) -> BenchmarkCase:
-    config_path = work_dir / "configs" / f"{solver}_{particles}_r{replicate}.toml"
-    output_dir = work_dir / "outputs" / f"{solver}_{particles}_r{replicate}"
+    config_path = work_dir / "configs" / f"{output_format}_{solver}_{particles}_r{replicate}.toml"
+    output_dir = work_dir / "outputs" / output_format / f"{solver}_{particles}_r{replicate}"
     write_config(
         config_path,
         solver,
@@ -142,7 +143,7 @@ def run_case(
             f"Benchmark failed for solver={solver} particles={particles} replicate={replicate}\n"
             + completed.stdout
         )
-    return BenchmarkCase(solver, particles, steps, replicate, seconds)
+    return BenchmarkCase(output_format, solver, particles, steps, replicate, seconds)
 
 
 def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
@@ -152,6 +153,7 @@ def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
         writer.writerow(
             [
                 "solver",
+                "output_format",
                 "particles",
                 "steps",
                 "replicate",
@@ -164,6 +166,7 @@ def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
             writer.writerow(
                 [
                     result.solver,
+                    result.output_format,
                     result.particles,
                     result.steps,
                     result.replicate,
@@ -174,10 +177,10 @@ def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
             )
 
 
-def summarize(results: list[BenchmarkCase]) -> list[tuple[str, int, int, float, float, float]]:
-    grouped: dict[tuple[str, int, int], list[BenchmarkCase]] = {}
+def summarize(results: list[BenchmarkCase]) -> list[tuple[str, str, int, int, float, float, float]]:
+    grouped: dict[tuple[str, str, int, int], list[BenchmarkCase]] = {}
     for result in results:
-        grouped.setdefault((result.solver, result.particles, result.steps), []).append(result)
+        grouped.setdefault((result.output_format, result.solver, result.particles, result.steps), []).append(result)
 
     rows = []
     solver_order = {
@@ -188,15 +191,24 @@ def summarize(results: list[BenchmarkCase]) -> list[tuple[str, int, int, float, 
         "fmm": 4,
         "cuda-fmm": 5,
     }
-    for (solver, particles, steps), cases in sorted(
+    format_order = {"csv": 0, "parquet": 1, "none": 2}
+    for (output_format, solver, particles, steps), cases in sorted(
         grouped.items(),
-        key=lambda item: (item[0][1], solver_order.get(item[0][0], 99), item[0][0]),
+        key=lambda item: (
+            item[0][2],
+            solver_order.get(item[0][1], 99),
+            item[0][1],
+            format_order.get(item[0][0], 99),
+            item[0][0],
+        ),
     ):
         seconds = [case.seconds for case in cases]
         median_seconds = statistics.median(seconds)
         steps_per_second = steps / median_seconds
         particle_steps_per_second = particles * steps_per_second
-        rows.append((solver, particles, steps, median_seconds, steps_per_second, particle_steps_per_second))
+        rows.append(
+            (output_format, solver, particles, steps, median_seconds, steps_per_second, particle_steps_per_second)
+        )
     return rows
 
 
@@ -213,12 +225,12 @@ def write_markdown(path: Path, results: list[BenchmarkCase]) -> None:
         "",
         "Build: Release executable. CUDA use depends on the selected solver and build configuration.",
         "",
-        "| Solver | Particles | Steps | Median wall time (s) | Steps/s | Particle-steps/s |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Output | Solver | Particles | Steps | Median wall time (s) | Steps/s | Particle-steps/s |",
+        "|---|---|---:|---:|---:|---:|---:|",
     ]
-    for solver, particles, steps, seconds, steps_per_second, particle_steps_per_second in rows:
+    for output_format, solver, particles, steps, seconds, steps_per_second, particle_steps_per_second in rows:
         lines.append(
-            f"| `{solver}` | {particles} | {steps} | {seconds:.3f} | "
+            f"| `{output_format}` | `{solver}` | {particles} | {steps} | {seconds:.3f} | "
             f"{steps_per_second:.2f} | {particle_steps_per_second:,.0f} |"
         )
     lines.append("")
@@ -235,7 +247,8 @@ def main() -> None:
     parser.add_argument("--particles", nargs="+", type=int, default=[250, 500, 1000])
     parser.add_argument("--steps", type=int, default=20)
     parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--output-format", choices=["csv", "none"], default="csv")
+    parser.add_argument("--output-format", choices=["csv", "parquet", "none"], default="csv")
+    parser.add_argument("--output-formats", nargs="+", choices=["csv", "parquet", "none"], default=None)
     parser.add_argument("--theta", type=float, default=0.58)
     parser.add_argument("--leaf-capacity", type=int, default=16)
     parser.add_argument("--expansion-order", type=int, choices=[0, 2, 4], default=4)
@@ -245,26 +258,28 @@ def main() -> None:
         raise FileNotFoundError(f"Executable not found: {args.executable}")
 
     results: list[BenchmarkCase] = []
-    for particles in args.particles:
-        for solver in args.solvers:
-            for replicate in range(1, args.repetitions + 1):
-                result = run_case(
-                    args.executable,
-                    solver,
-                    particles,
-                    args.steps,
-                    replicate,
-                    args.work_dir,
-                    args.output_format,
-                    args.theta,
-                    args.leaf_capacity,
-                    args.expansion_order,
-                )
-                results.append(result)
-                print(
-                    f"{solver:>6} n={particles:<5} run={replicate} "
-                    f"{result.seconds:.3f}s ({result.steps_per_second:.2f} steps/s)"
-                )
+    output_formats = args.output_formats if args.output_formats is not None else [args.output_format]
+    for output_format in output_formats:
+        for particles in args.particles:
+            for solver in args.solvers:
+                for replicate in range(1, args.repetitions + 1):
+                    result = run_case(
+                        args.executable,
+                        solver,
+                        particles,
+                        args.steps,
+                        replicate,
+                        args.work_dir,
+                        output_format,
+                        args.theta,
+                        args.leaf_capacity,
+                        args.expansion_order,
+                    )
+                    results.append(result)
+                    print(
+                        f"{output_format:>7} {solver:>6} n={particles:<5} run={replicate} "
+                        f"{result.seconds:.3f}s ({result.steps_per_second:.2f} steps/s)"
+                    )
 
     write_csv(args.csv, results)
     write_markdown(args.markdown, results)
