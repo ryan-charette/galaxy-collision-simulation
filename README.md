@@ -345,3 +345,32 @@ directories, `sweep_summary.csv`, optional `sweep_summary.parquet`, and
 `sweep_metadata.json`. Use `--dry-run` to only materialize planned configs,
 `--resume` to skip completed runs with metadata, and `--jobs N` for local
 parallel execution.
+
+Generate an ML-ready solver-tuning dataset from a sweep:
+
+```bash
+python scripts/generate_ml_dataset.py \
+  --sweep configs/sweeps/ml_solver_dataset.yaml \
+  --output experiments/ml_datasets/solver_tuning.parquet
+```
+
+The dataset generator writes one row per run with solver settings, provenance,
+hardware/build metadata, wall-clock timing, particle-steps/s, and energy/momentum
+drift fields. Use `--limit N` for a smoke subset and `--resume` to reuse completed
+run directories.
+
+Generate solver crossover plots and tables from runtime and accuracy benchmark
+CSVs:
+
+```bash
+python -m python.analysis.solver_crossover \
+  --runtime-csv docs/benchmarks/local_cpu_benchmark.csv \
+  --accuracy-csv experiments/accuracy/force_error_summary.csv
+```
+
+For fresh runtime inputs, `scripts/run_benchmarks.py --crossover-suite` runs a
+wider particle-count sweep with both snapshot output disabled and CSV output
+enabled. The crossover analysis writes `runtime_vs_n.png`,
+`particle_steps_vs_n.png`, `force_error_vs_runtime.png`,
+`best_solver_by_n.csv`, `target_accuracy_summary.csv`, and
+`solver_crossover_summary.md`.
