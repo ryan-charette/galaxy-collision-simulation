@@ -207,6 +207,12 @@ experiments/validation/smoke_test/
   ...
 ```
 
+`metadata.json` records reproducibility context for every run, including the git
+commit and branch, dirty working-tree state, build type, compiler, requested
+CMake MPI/CUDA options, CUDA availability and device name, MPI rank count,
+hostname, UTC timestamp, config path, and config SHA-256 hash. This file is
+written even when `[output] format = "none"` disables snapshots and diagnostics.
+
 For larger analysis or ML-oriented datasets, switch the snapshot format to Parquet:
 
 ```toml
