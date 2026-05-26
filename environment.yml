@@ -9,6 +9,7 @@ dependencies:
   - h5py
   - pandas
   - pyarrow
+  - scikit-learn
   - pytest
   - tqdm
   - moviepy
