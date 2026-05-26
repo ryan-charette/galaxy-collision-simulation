@@ -1,4 +1,4 @@
-"""Generate ML-ready solver-tuning datasets from simulator sweeps."""
+"""Generate versioned ML-ready datasets from reproducible simulator sweeps."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import csv
 import json
 import math
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +25,10 @@ if str(REPO_ROOT) not in sys.path:
 from scripts import sweep as sweep_runner
 
 
+DATASET_SCHEMA_VERSION = "0.1.0"
+
 SOLVER_TUNING_COLUMNS = [
+    "dataset_schema_version",
     "run_id",
     "status",
     "exit_code",
@@ -63,10 +68,144 @@ SOLVER_TUNING_COLUMNS = [
     "log_path",
 ]
 
+FORCE_ERROR_COLUMNS = [
+    "dataset_schema_version",
+    "run_id",
+    "direct_run_id",
+    "status",
+    "error",
+    "git_commit",
+    "config_sha256",
+    "direct_config_sha256",
+    "solver",
+    "n_particles",
+    "tree_theta",
+    "tree_leaf_capacity",
+    "fmm_expansion_order",
+    "softening",
+    "force_rmse",
+    "force_mae",
+    "force_max_error",
+    "relative_force_rmse",
+    "runtime_direct",
+    "runtime_approx",
+    "speedup_vs_direct",
+    "config_path",
+    "direct_config_path",
+    "output_dir",
+    "direct_output_dir",
+]
 
-def load_toml(path: Path) -> dict[str, Any]:
-    with path.open("rb") as handle:
-        return tomllib.load(handle)
+PER_STEP_DIAGNOSTICS_COLUMNS = [
+    "dataset_schema_version",
+    "run_id",
+    "status",
+    "git_commit",
+    "config_sha256",
+    "solver",
+    "n_particles",
+    "step",
+    "time",
+    "kinetic_energy",
+    "potential_energy",
+    "total_energy",
+    "linear_momentum_x",
+    "linear_momentum_y",
+    "linear_momentum_z",
+    "angular_momentum_x",
+    "angular_momentum_y",
+    "angular_momentum_z",
+    "step_wall_time",
+    "config_path",
+    "output_dir",
+]
+
+DATASET_SCHEMAS = {
+    "solver_tuning": {
+        "columns": SOLVER_TUNING_COLUMNS,
+        "required": [
+            "dataset_schema_version",
+            "run_id",
+            "git_commit",
+            "config_sha256",
+            "solver",
+            "n_particles",
+            "steps",
+            "dt",
+            "softening",
+            "tree_theta",
+            "tree_leaf_capacity",
+            "fmm_expansion_order",
+            "output_format",
+            "median_step_time",
+            "total_wall_time",
+            "particle_steps_per_second",
+            "energy_drift_final",
+            "momentum_drift_final",
+            "max_energy_drift",
+            "max_momentum_drift",
+        ],
+    },
+    "force_error": {
+        "columns": FORCE_ERROR_COLUMNS,
+        "required": [
+            "dataset_schema_version",
+            "run_id",
+            "direct_run_id",
+            "git_commit",
+            "config_sha256",
+            "direct_config_sha256",
+            "solver",
+            "n_particles",
+            "tree_theta",
+            "tree_leaf_capacity",
+            "fmm_expansion_order",
+            "softening",
+            "force_rmse",
+            "force_mae",
+            "force_max_error",
+            "relative_force_rmse",
+            "runtime_direct",
+            "runtime_approx",
+            "speedup_vs_direct",
+        ],
+    },
+    "per_step_diagnostics": {
+        "columns": PER_STEP_DIAGNOSTICS_COLUMNS,
+        "required": [
+            "dataset_schema_version",
+            "run_id",
+            "git_commit",
+            "config_sha256",
+            "solver",
+            "n_particles",
+            "step",
+            "time",
+            "kinetic_energy",
+            "potential_energy",
+            "total_energy",
+            "linear_momentum_x",
+            "linear_momentum_y",
+            "linear_momentum_z",
+            "angular_momentum_x",
+            "angular_momentum_y",
+            "angular_momentum_z",
+            "step_wall_time",
+        ],
+    },
+}
+
+
+@dataclass(frozen=True)
+class DatasetArtifact:
+    dataset_type: str
+    clean_path: Path
+    raw_path: Path
+    summary_path: Path
+    manifest_path: Path
+    raw_rows: int
+    clean_rows: int
+    missing_counts: dict[str, int]
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -98,6 +237,16 @@ def safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def is_missing(value: Any) -> bool:
+    if value is None or value == "":
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    if isinstance(value, str) and value.lower() == "nan":
+        return True
+    return False
 
 
 def vector_norm(row: dict[str, str], columns: tuple[str, str, str]) -> float:
@@ -184,41 +333,25 @@ def hardware_type(metadata: dict[str, Any], solver: str) -> str:
     return "cpu"
 
 
-def make_dataset_row(
-    run: sweep_runner.SweepRun,
-    result: sweep_runner.SweepResult,
-    summary_seconds: dict[str, float],
-) -> dict[str, Any]:
-    metadata = result.metadata or read_json(result.output_dir / "metadata.json")
-    config = run.config
-    simulation = config.get("simulation", {})
-    physics = config.get("physics", {})
-    output = config.get("output", {})
-    solver = str(simulation.get("solver", metadata.get("solver", "")))
-    steps = safe_int(simulation.get("steps", metadata.get("steps")), 0)
-    n_particles = safe_int(simulation.get("n_particles", metadata.get("particle_count")), 0)
+def run_metadata(result: sweep_runner.SweepResult) -> dict[str, Any]:
+    return result.metadata or read_json(result.output_dir / "metadata.json")
 
-    total_wall_time = result.seconds
-    if total_wall_time <= 0.0:
-        total_wall_time = summary_seconds.get(result.run_id, 0.0)
 
-    particle_steps = n_particles * max(steps, 0)
-    particle_steps_per_second = (
-        particle_steps / total_wall_time if total_wall_time > 0.0 and particle_steps > 0 else math.nan
-    )
-    drift = diagnostics_metrics(result.output_dir)
+def run_seconds(result: sweep_runner.SweepResult, summary_seconds: dict[str, float]) -> float:
+    if result.seconds > 0.0:
+        return result.seconds
+    return summary_seconds.get(result.run_id, 0.0)
 
-    row: dict[str, Any] = {
-        "run_id": result.run_id,
-        "status": result.status,
-        "exit_code": result.exit_code,
-        "error": result.error,
-        "git_commit": metadata.get("git_commit", ""),
-        "config_sha256": metadata.get("config_sha256", ""),
-        "hardware_type": hardware_type(metadata, solver),
-        "solver": solver,
-        "n_particles": n_particles,
-        "steps": steps,
+
+def run_settings(run: sweep_runner.SweepRun, result: sweep_runner.SweepResult) -> dict[str, Any]:
+    metadata = run_metadata(result)
+    simulation = run.config.get("simulation", {})
+    physics = run.config.get("physics", {})
+    output = run.config.get("output", {})
+    return {
+        "solver": str(simulation.get("solver", metadata.get("solver", ""))),
+        "n_particles": safe_int(simulation.get("n_particles", metadata.get("particle_count")), 0),
+        "steps": safe_int(simulation.get("steps", metadata.get("steps")), 0),
         "dt": safe_float(simulation.get("dt", metadata.get("dt"))),
         "softening": safe_float(physics.get("softening", metadata.get("softening"))),
         "tree_theta": safe_float(simulation.get("tree_theta", metadata.get("tree_theta"))),
@@ -231,39 +364,356 @@ def make_dataset_row(
             0,
         ),
         "output_format": output.get("format", metadata.get("output_format", "")),
-        "median_step_time": total_wall_time / steps if total_wall_time > 0.0 and steps > 0 else math.nan,
-        "total_wall_time": total_wall_time if total_wall_time > 0.0 else math.nan,
-        "particle_steps_per_second": particle_steps_per_second,
-        "git_branch": metadata.get("git_branch", ""),
-        "git_dirty": metadata.get("git_dirty", ""),
-        "build_type": metadata.get("build_type", ""),
-        "compiler": metadata.get("compiler", ""),
-        "compiler_version": metadata.get("compiler_version", ""),
-        "cuda_available": metadata.get("cuda_available", ""),
-        "cuda_device_name": metadata.get("cuda_device_name", ""),
-        "mpi_enabled": metadata.get("mpi_enabled", ""),
-        "rank_count": metadata.get("rank_count", ""),
-        "hostname": metadata.get("hostname", ""),
-        "timestamp_utc": metadata.get("timestamp_utc", ""),
-        "config_path": result.config_path.as_posix(),
-        "output_dir": result.output_dir.as_posix(),
-        "log_path": result.log_path.as_posix(),
     }
-    row.update(drift)
-    return row
 
 
-def write_dataset(path: Path, rows: list[dict[str, Any]]) -> None:
+def settings_key(settings: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        settings["n_particles"],
+        settings["tree_theta"],
+        settings["tree_leaf_capacity"],
+        settings["fmm_expansion_order"],
+        settings["softening"],
+    )
+
+
+def make_solver_tuning_rows(
+    runs: list[sweep_runner.SweepRun],
+    results: list[sweep_runner.SweepResult],
+    summary_seconds: dict[str, float],
+) -> list[dict[str, Any]]:
+    run_by_id = {run.run_id: run for run in runs}
+    rows: list[dict[str, Any]] = []
+    for result in results:
+        run = run_by_id.get(result.run_id)
+        if run is None:
+            continue
+        metadata = run_metadata(result)
+        settings = run_settings(run, result)
+        total_wall_time = run_seconds(result, summary_seconds)
+        particle_steps = settings["n_particles"] * max(settings["steps"], 0)
+        drift = diagnostics_metrics(result.output_dir)
+        row: dict[str, Any] = {
+            "dataset_schema_version": DATASET_SCHEMA_VERSION,
+            "run_id": result.run_id,
+            "status": result.status,
+            "exit_code": result.exit_code,
+            "error": result.error,
+            "git_commit": metadata.get("git_commit", ""),
+            "config_sha256": metadata.get("config_sha256", ""),
+            "hardware_type": hardware_type(metadata, settings["solver"]),
+            "solver": settings["solver"],
+            "n_particles": settings["n_particles"],
+            "steps": settings["steps"],
+            "dt": settings["dt"],
+            "softening": settings["softening"],
+            "tree_theta": settings["tree_theta"],
+            "tree_leaf_capacity": settings["tree_leaf_capacity"],
+            "fmm_expansion_order": settings["fmm_expansion_order"],
+            "output_format": settings["output_format"],
+            "median_step_time": (
+                total_wall_time / settings["steps"]
+                if total_wall_time > 0.0 and settings["steps"] > 0
+                else math.nan
+            ),
+            "total_wall_time": total_wall_time if total_wall_time > 0.0 else math.nan,
+            "particle_steps_per_second": (
+                particle_steps / total_wall_time
+                if total_wall_time > 0.0 and particle_steps > 0
+                else math.nan
+            ),
+            "git_branch": metadata.get("git_branch", ""),
+            "git_dirty": metadata.get("git_dirty", ""),
+            "build_type": metadata.get("build_type", ""),
+            "compiler": metadata.get("compiler", ""),
+            "compiler_version": metadata.get("compiler_version", ""),
+            "cuda_available": metadata.get("cuda_available", ""),
+            "cuda_device_name": metadata.get("cuda_device_name", ""),
+            "mpi_enabled": metadata.get("mpi_enabled", ""),
+            "rank_count": metadata.get("rank_count", ""),
+            "hostname": metadata.get("hostname", ""),
+            "timestamp_utc": metadata.get("timestamp_utc", ""),
+            "config_path": result.config_path.as_posix(),
+            "output_dir": result.output_dir.as_posix(),
+            "log_path": result.log_path.as_posix(),
+        }
+        row.update(drift)
+        rows.append(row)
+    return rows
+
+
+def first_snapshot_path(output_dir: Path) -> Path | None:
+    for suffix in (".csv", ".parquet"):
+        path = output_dir / f"snapshot_000000{suffix}"
+        if path.exists():
+            return path
+    return None
+
+
+def load_snapshot_accelerations(path: Path) -> dict[int, tuple[float, float, float]]:
+    if path.suffix == ".parquet":
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise RuntimeError("Reading Parquet snapshots requires pandas and pyarrow") from exc
+        frame = pd.read_parquet(path, engine="pyarrow")
+        return {
+            int(row.id): (float(row.ax), float(row.ay), float(row.az))
+            for row in frame.itertuples(index=False)
+        }
+
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        first = handle.readline()
+        if not first.startswith("#"):
+            handle.seek(0)
+        reader = csv.DictReader(handle)
+        return {
+            safe_int(row["id"]): (
+                safe_float(row.get("ax"), 0.0),
+                safe_float(row.get("ay"), 0.0),
+                safe_float(row.get("az"), 0.0),
+            )
+            for row in reader
+        }
+
+
+def compare_force_snapshots(
+    direct_path: Path,
+    approx_path: Path,
+) -> tuple[float, float, float, float]:
+    direct = load_snapshot_accelerations(direct_path)
+    approx = load_snapshot_accelerations(approx_path)
+    common_ids = sorted(set(direct) & set(approx))
+    if not common_ids or len(common_ids) != len(direct) or len(common_ids) != len(approx):
+        raise RuntimeError(f"Snapshot particle IDs do not match: {direct_path} vs {approx_path}")
+
+    squared_errors = []
+    abs_errors = []
+    reference_squared = []
+    for particle_id in common_ids:
+        dx = approx[particle_id][0] - direct[particle_id][0]
+        dy = approx[particle_id][1] - direct[particle_id][1]
+        dz = approx[particle_id][2] - direct[particle_id][2]
+        error_norm = math.sqrt(dx * dx + dy * dy + dz * dz)
+        reference_norm2 = (
+            direct[particle_id][0] * direct[particle_id][0]
+            + direct[particle_id][1] * direct[particle_id][1]
+            + direct[particle_id][2] * direct[particle_id][2]
+        )
+        squared_errors.append(error_norm * error_norm)
+        abs_errors.append(error_norm)
+        reference_squared.append(reference_norm2)
+
+    rmse = math.sqrt(sum(squared_errors) / len(squared_errors))
+    mae = sum(abs_errors) / len(abs_errors)
+    max_error = max(abs_errors)
+    reference_rmse = math.sqrt(sum(reference_squared) / len(reference_squared))
+    relative_rmse = rmse / max(reference_rmse, 1.0e-12)
+    return rmse, mae, max_error, relative_rmse
+
+
+def make_force_error_rows(
+    runs: list[sweep_runner.SweepRun],
+    results: list[sweep_runner.SweepResult],
+    summary_seconds: dict[str, float],
+) -> list[dict[str, Any]]:
+    run_by_id = {run.run_id: run for run in runs}
+    result_by_id = {result.run_id: result for result in results}
+    direct_refs: dict[tuple[int, tuple[Any, ...]], sweep_runner.SweepResult] = {}
+    fallback_refs: dict[tuple[Any, ...], sweep_runner.SweepResult] = {}
+
+    for result in results:
+        run = run_by_id.get(result.run_id)
+        if run is None or result.status != "completed":
+            continue
+        settings = run_settings(run, result)
+        if settings["solver"] == "direct":
+            key = settings_key(settings)
+            direct_refs[(result.repetition, key)] = result
+            fallback_refs.setdefault(key, result)
+
+    rows: list[dict[str, Any]] = []
+    for result in results:
+        run = run_by_id.get(result.run_id)
+        if run is None:
+            continue
+        settings = run_settings(run, result)
+        if settings["solver"] == "direct":
+            continue
+
+        metadata = run_metadata(result)
+        key = settings_key(settings)
+        direct_result = direct_refs.get((result.repetition, key)) or fallback_refs.get(key)
+        row: dict[str, Any] = {
+            "dataset_schema_version": DATASET_SCHEMA_VERSION,
+            "run_id": result.run_id,
+            "direct_run_id": direct_result.run_id if direct_result else "",
+            "status": result.status,
+            "error": result.error,
+            "git_commit": metadata.get("git_commit", ""),
+            "config_sha256": metadata.get("config_sha256", ""),
+            "direct_config_sha256": "",
+            "solver": settings["solver"],
+            "n_particles": settings["n_particles"],
+            "tree_theta": settings["tree_theta"],
+            "tree_leaf_capacity": settings["tree_leaf_capacity"],
+            "fmm_expansion_order": settings["fmm_expansion_order"],
+            "softening": settings["softening"],
+            "force_rmse": math.nan,
+            "force_mae": math.nan,
+            "force_max_error": math.nan,
+            "relative_force_rmse": math.nan,
+            "runtime_direct": math.nan,
+            "runtime_approx": run_seconds(result, summary_seconds),
+            "speedup_vs_direct": math.nan,
+            "config_path": result.config_path.as_posix(),
+            "direct_config_path": "",
+            "output_dir": result.output_dir.as_posix(),
+            "direct_output_dir": "",
+        }
+
+        if direct_result is None:
+            row["status"] = "missing_reference"
+            row["error"] = "no completed direct run with matching solver settings"
+            rows.append(row)
+            continue
+
+        direct_metadata = run_metadata(direct_result)
+        direct_snapshot = first_snapshot_path(direct_result.output_dir)
+        approx_snapshot = first_snapshot_path(result.output_dir)
+        row["direct_config_sha256"] = direct_metadata.get("config_sha256", "")
+        row["direct_config_path"] = direct_result.config_path.as_posix()
+        row["direct_output_dir"] = direct_result.output_dir.as_posix()
+        row["runtime_direct"] = run_seconds(direct_result, summary_seconds)
+
+        if direct_snapshot is None or approx_snapshot is None:
+            row["status"] = "missing_snapshot"
+            row["error"] = "missing snapshot_000000 for direct or approximate run"
+            rows.append(row)
+            continue
+
+        try:
+            rmse, mae, max_error, relative_rmse = compare_force_snapshots(
+                direct_snapshot,
+                approx_snapshot,
+            )
+            row["force_rmse"] = rmse
+            row["force_mae"] = mae
+            row["force_max_error"] = max_error
+            row["relative_force_rmse"] = relative_rmse
+            if row["runtime_approx"] > 0.0:
+                row["speedup_vs_direct"] = row["runtime_direct"] / row["runtime_approx"]
+        except RuntimeError as exc:
+            row["status"] = "failed_comparison"
+            row["error"] = str(exc)
+        rows.append(row)
+    return rows
+
+
+def make_per_step_diagnostics_rows(
+    runs: list[sweep_runner.SweepRun],
+    results: list[sweep_runner.SweepResult],
+    summary_seconds: dict[str, float],
+) -> list[dict[str, Any]]:
+    run_by_id = {run.run_id: run for run in runs}
+    rows: list[dict[str, Any]] = []
+    for result in results:
+        run = run_by_id.get(result.run_id)
+        if run is None:
+            continue
+        metadata = run_metadata(result)
+        settings = run_settings(run, result)
+        diagnostics = read_csv_rows(result.output_dir / "diagnostics.csv")
+        average_step_wall_time = (
+            run_seconds(result, summary_seconds) / settings["steps"]
+            if run_seconds(result, summary_seconds) > 0.0 and settings["steps"] > 0
+            else math.nan
+        )
+
+        if not diagnostics:
+            rows.append(
+                {
+                    "dataset_schema_version": DATASET_SCHEMA_VERSION,
+                    "run_id": result.run_id,
+                    "status": "missing_diagnostics",
+                    "git_commit": metadata.get("git_commit", ""),
+                    "config_sha256": metadata.get("config_sha256", ""),
+                    "solver": settings["solver"],
+                    "n_particles": settings["n_particles"],
+                    "step": math.nan,
+                    "time": math.nan,
+                    "kinetic_energy": math.nan,
+                    "potential_energy": math.nan,
+                    "total_energy": math.nan,
+                    "linear_momentum_x": math.nan,
+                    "linear_momentum_y": math.nan,
+                    "linear_momentum_z": math.nan,
+                    "angular_momentum_x": math.nan,
+                    "angular_momentum_y": math.nan,
+                    "angular_momentum_z": math.nan,
+                    "step_wall_time": average_step_wall_time,
+                    "config_path": result.config_path.as_posix(),
+                    "output_dir": result.output_dir.as_posix(),
+                }
+            )
+            continue
+
+        for diagnostic in diagnostics:
+            rows.append(
+                {
+                    "dataset_schema_version": DATASET_SCHEMA_VERSION,
+                    "run_id": result.run_id,
+                    "status": result.status,
+                    "git_commit": metadata.get("git_commit", ""),
+                    "config_sha256": metadata.get("config_sha256", ""),
+                    "solver": settings["solver"],
+                    "n_particles": settings["n_particles"],
+                    "step": safe_int(diagnostic.get("step")),
+                    "time": safe_float(diagnostic.get("time")),
+                    "kinetic_energy": safe_float(diagnostic.get("kinetic_energy")),
+                    "potential_energy": safe_float(diagnostic.get("potential_energy")),
+                    "total_energy": safe_float(diagnostic.get("total_energy")),
+                    "linear_momentum_x": safe_float(diagnostic.get("momentum_x")),
+                    "linear_momentum_y": safe_float(diagnostic.get("momentum_y")),
+                    "linear_momentum_z": safe_float(diagnostic.get("momentum_z")),
+                    "angular_momentum_x": safe_float(diagnostic.get("angular_momentum_x")),
+                    "angular_momentum_y": safe_float(diagnostic.get("angular_momentum_y")),
+                    "angular_momentum_z": safe_float(diagnostic.get("angular_momentum_z")),
+                    "step_wall_time": average_step_wall_time,
+                    "config_path": result.config_path.as_posix(),
+                    "output_dir": result.output_dir.as_posix(),
+                }
+            )
+    return rows
+
+
+def output_path_for(base: Path, dataset_type: str, all_mode: bool) -> Path:
+    if not all_mode:
+        return base
+    if base.suffix:
+        return base.with_name(f"{base.stem}.{dataset_type}{base.suffix}")
+    return base / f"{dataset_type}.csv"
+
+
+def raw_path_for(clean_path: Path) -> Path:
+    return clean_path.with_name(f"{clean_path.stem}.raw{clean_path.suffix}")
+
+
+def summary_path_for(clean_path: Path) -> Path:
+    return clean_path.with_suffix(clean_path.suffix + ".summary.md")
+
+
+def manifest_path_for(clean_path: Path) -> Path:
+    return clean_path.with_suffix(clean_path.suffix + ".manifest.json")
+
+
+def write_table(path: Path, rows: list[dict[str, Any]], columns: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix.lower() == ".parquet":
         try:
             import pandas as pd
 
-            pd.DataFrame(rows, columns=SOLVER_TUNING_COLUMNS).to_parquet(
-                path,
-                index=False,
-                engine="pyarrow",
-            )
+            pd.DataFrame(rows, columns=columns).to_parquet(path, index=False, engine="pyarrow")
         except ImportError as exc:
             raise RuntimeError(
                 "Parquet dataset output requires pandas and pyarrow. Install project "
@@ -272,23 +722,132 @@ def write_dataset(path: Path, rows: list[dict[str, Any]]) -> None:
         return
 
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=SOLVER_TUNING_COLUMNS)
+        writer = csv.DictWriter(handle, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
 
 
-def write_manifest(path: Path, args: argparse.Namespace, output_root: Path, rows: list[dict[str, Any]]) -> None:
-    status_counts = {status: sum(1 for row in rows if row["status"] == status) for status in {"completed", "failed", "planned"}}
+def missing_counts(rows: list[dict[str, Any]], required_columns: list[str]) -> dict[str, int]:
+    return {
+        column: sum(1 for row in rows if is_missing(row.get(column))) for column in required_columns
+    }
+
+
+def clean_rows(dataset_type: str, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    schema = DATASET_SCHEMAS[dataset_type]
+    required = schema["required"]
+    counts = missing_counts(rows, required)
+    cleaned = [
+        row
+        for row in rows
+        if row.get("status") == "completed"
+        and all(not is_missing(row.get(column)) for column in required)
+    ]
+    return cleaned, counts
+
+
+def write_summary(
+    path: Path,
+    dataset_type: str,
+    raw_rows: list[dict[str, Any]],
+    cleaned_rows: list[dict[str, Any]],
+    counts: dict[str, int],
+    raw_path: Path,
+    clean_path: Path,
+) -> None:
+    status_counts: dict[str, int] = {}
+    for row in raw_rows:
+        status = str(row.get("status", "unknown"))
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    missing_lines = [
+        f"| `{column}` | {count} |" for column, count in counts.items() if count > 0
+    ]
+    if not missing_lines:
+        missing_lines = ["| none | 0 |"]
+
+    lines = [
+        f"# {dataset_type.replace('_', ' ').title()} Dataset",
+        "",
+        f"- Schema version: `{DATASET_SCHEMA_VERSION}`",
+        f"- Raw rows: {len(raw_rows)}",
+        f"- Cleaned rows: {len(cleaned_rows)}",
+        f"- Raw dataset: `{raw_path.as_posix()}`",
+        f"- Cleaned dataset: `{clean_path.as_posix()}`",
+        "",
+        "## Status Counts",
+        "",
+        "| Status | Rows |",
+        "|---|---:|",
+    ]
+    lines.extend(f"| `{status}` | {count} |" for status, count in sorted(status_counts.items()))
+    lines.extend(
+        [
+            "",
+            "## Missing Required Values",
+            "",
+            "| Column | Missing rows |",
+            "|---|---:|",
+            *missing_lines,
+            "",
+            "## Columns",
+            "",
+            ", ".join(f"`{column}`" for column in DATASET_SCHEMAS[dataset_type]["columns"]),
+            "",
+        ]
+    )
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_manifest(
+    path: Path,
+    args: argparse.Namespace,
+    output_root: Path,
+    artifact: DatasetArtifact,
+) -> None:
     payload = {
-        "dataset_type": "solver_tuning",
+        "dataset_schema_version": DATASET_SCHEMA_VERSION,
+        "dataset_type": artifact.dataset_type,
         "sweep": str(args.sweep),
         "sweep_output_root": output_root.as_posix(),
-        "dataset_path": args.output.as_posix(),
-        "row_count": len(rows),
-        "status_counts": status_counts,
-        "columns": SOLVER_TUNING_COLUMNS,
+        "raw_dataset_path": artifact.raw_path.as_posix(),
+        "clean_dataset_path": artifact.clean_path.as_posix(),
+        "summary_path": artifact.summary_path.as_posix(),
+        "raw_row_count": artifact.raw_rows,
+        "clean_row_count": artifact.clean_rows,
+        "missing_required_values": artifact.missing_counts,
+        "columns": DATASET_SCHEMAS[artifact.dataset_type]["columns"],
     }
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def materialize_dataset(
+    dataset_type: str,
+    raw_rows: list[dict[str, Any]],
+    clean_path: Path,
+    args: argparse.Namespace,
+    output_root: Path,
+) -> DatasetArtifact:
+    schema = DATASET_SCHEMAS[dataset_type]
+    raw_path = raw_path_for(clean_path)
+    summary_path = summary_path_for(clean_path)
+    manifest_path = manifest_path_for(clean_path)
+    cleaned, counts = clean_rows(dataset_type, raw_rows)
+    write_table(raw_path, raw_rows, schema["columns"])
+    write_table(clean_path, cleaned, schema["columns"])
+    write_summary(summary_path, dataset_type, raw_rows, cleaned, counts, raw_path, clean_path)
+    artifact = DatasetArtifact(
+        dataset_type=dataset_type,
+        clean_path=clean_path,
+        raw_path=raw_path,
+        summary_path=summary_path,
+        manifest_path=manifest_path,
+        raw_rows=len(raw_rows),
+        clean_rows=len(cleaned),
+        missing_counts=counts,
+    )
+    write_manifest(manifest_path, args, output_root, artifact)
+    return artifact
 
 
 def run_or_plan_sweep(
@@ -318,8 +877,6 @@ def run_or_plan_sweep(
             if result.status == "failed" and args.stop_on_failure:
                 break
     else:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_run = {
                 executor.submit(sweep_runner.execute_run, executable, run, args.resume): run
@@ -343,6 +900,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sweep", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--dataset-type",
+        choices=["solver_tuning", "force_error", "per_step_diagnostics", "all"],
+        default="solver_tuning",
+    )
     parser.add_argument("--executable", default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -359,17 +921,29 @@ def main() -> None:
     for run_id, seconds in current_summary_seconds.items():
         if seconds > 0.0:
             summary_seconds[run_id] = seconds
-    run_by_id = {run.run_id: run for run in runs}
-    rows = [
-        make_dataset_row(run_by_id[result.run_id], result, summary_seconds)
-        for result in results
-        if result.run_id in run_by_id
-    ]
-    write_dataset(args.output, rows)
-    manifest_path = args.output.with_suffix(args.output.suffix + ".manifest.json")
-    write_manifest(manifest_path, args, output_root, rows)
-    print(f"Wrote {args.output}")
-    print(f"Wrote {manifest_path}")
+
+    dataset_types = (
+        ["solver_tuning", "force_error", "per_step_diagnostics"]
+        if args.dataset_type == "all"
+        else [args.dataset_type]
+    )
+    builders = {
+        "solver_tuning": make_solver_tuning_rows,
+        "force_error": make_force_error_rows,
+        "per_step_diagnostics": make_per_step_diagnostics_rows,
+    }
+
+    artifacts: list[DatasetArtifact] = []
+    all_mode = args.dataset_type == "all"
+    for dataset_type in dataset_types:
+        clean_path = output_path_for(args.output, dataset_type, all_mode)
+        rows = builders[dataset_type](runs, results, summary_seconds)
+        artifact = materialize_dataset(dataset_type, rows, clean_path, args, output_root)
+        artifacts.append(artifact)
+        print(f"Wrote {artifact.clean_path}")
+        print(f"Wrote {artifact.raw_path}")
+        print(f"Wrote {artifact.summary_path}")
+        print(f"Wrote {artifact.manifest_path}")
 
 
 if __name__ == "__main__":
