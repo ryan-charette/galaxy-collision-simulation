@@ -12,3 +12,7 @@ CSV keeps the current simulator easy to build and inspect. Parquet output uses t
 Python converter in `python.utils.parquet_io`, so the runtime Python environment must
 include `pyarrow`. Set `FMM_GALAXY_PYTHON` if the simulator should use a specific
 Python executable for conversion.
+
+`metadata.json` is always written, including for `format = "none"`. It captures
+source provenance, build/runtime context, CUDA/MPI availability, timestamp,
+hostname, config path, and config SHA-256 hash.
