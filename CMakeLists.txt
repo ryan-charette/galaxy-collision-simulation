@@ -9,6 +9,18 @@ project(DistributedFMMGalaxySim
 option(ENABLE_MPI "Enable MPI support when available" ON)
 option(ENABLE_CUDA "Enable CUDA support when available" ON)
 
+if(ENABLE_MPI)
+    set(FMM_GALAXY_CMAKE_ENABLE_MPI 1)
+else()
+    set(FMM_GALAXY_CMAKE_ENABLE_MPI 0)
+endif()
+
+if(ENABLE_CUDA)
+    set(FMM_GALAXY_CMAKE_ENABLE_CUDA 1)
+else()
+    set(FMM_GALAXY_CMAKE_ENABLE_CUDA 0)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -50,6 +62,7 @@ add_library(fmm_galaxy_core
     cpp/core/diagnostics.cpp
     cpp/core/initial_conditions.cpp
     cpp/core/integrator.cpp
+    cpp/core/provenance.cpp
     cpp/core/simulation_info.cpp
     cpp/cuda/cuda_solver_stub.cpp
     cpp/direct/direct_solver.cpp
