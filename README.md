@@ -1,6 +1,6 @@
 # Distributed Fast Multipole Galaxy Collision Simulator
 
-A compact 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV snapshot output, diagnostics, and Python plotting/animation tools.
+A compact 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV/Parquet snapshot output, diagnostics, and Python plotting/animation tools.
 
 ## Features
 
@@ -12,7 +12,7 @@ A compact 3D gravitational N-body simulator for galaxy collision experiments. Th
 - Optional CUDA direct/P2P force kernels, plus GPU evaluation paths for CPU-built tree and FMM interaction data
 - Kick-drift-kick leapfrog integrator
 - Reproducible disk-galaxy initial conditions from TOML-like configs
-- CSV snapshots plus metadata and energy/momentum diagnostics
+- CSV or Apache Parquet snapshots plus metadata and energy/momentum diagnostics
 - Python snapshot loader, static plotting, and MP4/GIF animation scripts
 - CTest smoke tests covering vectors, forces, integration, FMM accuracy, CUDA fallback, MPI ownership, config parsing, diagnostics, and snapshot writing
 
@@ -162,7 +162,7 @@ cpp/direct/     direct softened-gravity solver
 cpp/fmm/        Barnes-Hut treecode and p=4 FMM solver
 cpp/mpi/        rank ownership and particle synchronization helpers
 cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
-cpp/io/         CSV snapshot and diagnostics writer
+cpp/io/         CSV/Parquet snapshot and diagnostics writer
 cpp/tests/      C++ smoke/unit tests
 python/utils/   snapshot and diagnostics loaders
 python/analysis/static plots
@@ -206,6 +206,18 @@ experiments/validation/smoke_test/
   snapshot_000010.csv
   ...
 ```
+
+For larger analysis or ML-oriented datasets, switch the snapshot format to Parquet:
+
+```toml
+[output]
+directory = "experiments/example"
+format = "parquet" # csv, parquet, none
+snapshot_every = 10
+```
+
+Parquet conversion uses the Python tooling and requires `pyarrow`. If the simulator
+should use a specific interpreter, set `FMM_GALAXY_PYTHON` before running it.
 
 Choose a solver in the config:
 
@@ -290,4 +302,10 @@ python scripts/render_readme_snapshot_gif.py --input experiments/validation/read
 python -m python.analysis.plot_snapshots --input experiments/validation/readme_1000_body_collision --snapshot experiments/validation/readme_1000_body_collision/snapshot_000149.csv --output docs/assets/readme_snapshot_step149.png --density-output docs/assets/readme_density_step149.png --no-diagnostics
 python scripts/run_benchmarks.py --executable build-readme-gif/fmm_galaxy_sim.exe --particles 250 500 1000 --steps 20 --repetitions 3
 python scripts/run_benchmarks.py --executable build/fmm_galaxy_sim --solvers cuda-tree cuda-fmm --particles 10000 50000 100000 --steps 10 --repetitions 3 --output-format none --expansion-order 0
+```
+
+Compare output formats on the same benchmark cases:
+
+```bash
+python scripts/run_benchmarks.py --executable build/fmm_galaxy_sim --solvers direct --particles 10000 --steps 10 --output-formats csv parquet
 ```
