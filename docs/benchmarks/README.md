@@ -34,6 +34,10 @@ git metadata could not be read.
   sweep runner writes generated configs, raw logs, per-run output directories,
   `sweep_summary.csv`, optional `sweep_summary.parquet`, and
   `sweep_metadata.json`.
+- Solver crossover analysis is generated from runtime and accuracy CSVs with
+  `python -m python.analysis.solver_crossover`. Use
+  `scripts/run_benchmarks.py --crossover-suite` to produce a wider runtime sweep
+  with both output-disabled and CSV-output cases before running the analysis.
 - The A100 run was produced from a downloaded repository zip, so the archive did
   not capture a git commit SHA. The results correspond to the CUDA tree/FMM
   implementation present in this branch at the time of the run.
