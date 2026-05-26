@@ -59,6 +59,18 @@ p95_relative_error
 max_relative_error
 ```
 
+The standard force-error suite automates this comparison:
+
+```bash
+python scripts/run_force_error_benchmarks.py --smoke
+```
+
+The smoke profile is intended for CI-scale validation. The full sweep writes
+CSV, Markdown, and plots under `experiments/accuracy/`, including force RMSE,
+max force error, relative force error, energy drift, momentum drift, angular
+momentum drift, runtime per step, particle-steps per second, and optional peak
+memory when `psutil` is installed.
+
 ## Parallel validation
 
 Compare serial and MPI outputs using identical seeds/configs.
