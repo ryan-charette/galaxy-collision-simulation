@@ -58,7 +58,7 @@ Deliverables:
 
 Goal: make outputs easy to inspect, plot, and render.
 
-Status: implemented with CSV snapshots, JSON metadata, diagnostics CSV, Python loaders, static plotting, and MP4/GIF animation scripts. HDF5 remains a future large-run format.
+Status: implemented with CSV/Parquet snapshots, JSON metadata, diagnostics CSV, Python loaders, static plotting, and MP4/GIF animation scripts. HDF5 remains a possible future large-run format.
 
 Deliverables:
 
@@ -127,15 +127,3 @@ Deliverables:
 - CPU vs CUDA speedup,
 - force error vs approximation setting,
 - energy drift plots.
-
-## Milestone 10: Portfolio packaging
-
-Goal: make the project clear and impressive to reviewers.
-
-Deliverables:
-
-- final README,
-- demo video,
-- benchmark report,
-- architecture diagram,
-- resume bullets.
