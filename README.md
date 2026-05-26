@@ -315,3 +315,33 @@ Compare output formats on the same benchmark cases:
 ```bash
 python scripts/run_benchmarks.py --executable build/fmm_galaxy_sim --solvers direct --particles 10000 --steps 10 --output-formats csv parquet
 ```
+
+Generate the standard direct-reference force-error suite:
+
+```bash
+python scripts/run_force_error_benchmarks.py --executable build/fmm_galaxy_sim
+```
+
+For CI-scale validation, use the smoke profile:
+
+```bash
+python scripts/run_force_error_benchmarks.py --executable build/fmm_galaxy_sim --smoke
+```
+
+The suite writes `experiments/accuracy/force_error_summary.csv`,
+`force_error_summary.md`, `force_error_vs_n.png`, `force_error_vs_theta.png`,
+`energy_drift.png`, and `momentum_drift.png`. It compares step-0 accelerations
+against direct summation and reports drift from each solver's diagnostics over a
+short integration window.
+
+Launch a generic YAML-defined parameter sweep:
+
+```bash
+python scripts/sweep.py --grid configs/sweeps/theta_leaf_order.yaml
+```
+
+The sweep runner generates per-run TOML configs, raw logs, simulator output
+directories, `sweep_summary.csv`, optional `sweep_summary.parquet`, and
+`sweep_metadata.json`. Use `--dry-run` to only materialize planned configs,
+`--resume` to skip completed runs with metadata, and `--jobs N` for local
+parallel execution.
