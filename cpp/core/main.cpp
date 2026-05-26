@@ -3,6 +3,7 @@
 #include "core/diagnostics.hpp"
 #include "core/initial_conditions.hpp"
 #include "core/integrator.hpp"
+#include "core/provenance.hpp"
 #include "core/simulation_info.hpp"
 #include "cuda/cuda_solver.hpp"
 #include "direct/direct_solver.hpp"
@@ -180,7 +181,10 @@ void compute_owned_accelerations(
     }
 }
 
-void run_simulation(const fmmgalaxy::SimulationConfig& config) {
+void run_simulation(
+    const fmmgalaxy::SimulationConfig& config,
+    const fmmgalaxy::RunProvenance& provenance
+) {
     std::cout << fmmgalaxy::build_summary();
     std::cout << "Simulation: " << config.name << '\n';
     std::cout << "Solver:     " << config.solver << '\n';
@@ -200,7 +204,7 @@ void run_simulation(const fmmgalaxy::SimulationConfig& config) {
     }
 
     fmmgalaxy::SnapshotWriter writer(config);
-    writer.write_metadata(config, particles.size());
+    writer.write_metadata(config, particles.size(), provenance);
 
     compute_serial_accelerations(particles, config);
 
@@ -252,7 +256,8 @@ void run_simulation(const fmmgalaxy::SimulationConfig& config) {
 
 void run_distributed_simulation(
     const fmmgalaxy::SimulationConfig& config,
-    const fmmgalaxy::MpiExecution& execution
+    const fmmgalaxy::MpiExecution& execution,
+    const fmmgalaxy::RunProvenance& provenance
 ) {
     if (execution.rank == 0) {
         std::cout << fmmgalaxy::build_summary();
@@ -285,7 +290,7 @@ void run_distributed_simulation(
     std::unique_ptr<fmmgalaxy::SnapshotWriter> writer;
     if (execution.rank == 0) {
         writer = std::make_unique<fmmgalaxy::SnapshotWriter>(config);
-        writer->write_metadata(config, particles.size());
+        writer->write_metadata(config, particles.size(), provenance);
     }
 
     auto write_outputs = [&](int step, double time) {
@@ -348,10 +353,14 @@ int main(int argc, char** argv) {
             if (options.has_output_directory) {
                 config.output.directory = options.output_directory;
             }
+            const auto provenance = fmmgalaxy::collect_run_provenance(
+                options.has_config ? &options.config_path : nullptr,
+                mpi
+            );
             if (mpi.enabled && mpi.size > 1) {
-                run_distributed_simulation(config, mpi);
+                run_distributed_simulation(config, mpi, provenance);
             } else {
-                run_simulation(config);
+                run_simulation(config, provenance);
             }
         }
     } catch (const std::exception& error) {
