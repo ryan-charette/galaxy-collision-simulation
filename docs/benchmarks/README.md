@@ -16,6 +16,8 @@ any enabled output work.
 
 - GPU benchmark cases used `[output] format = "none"` so snapshot and
   diagnostics I/O would not dominate large-particle throughput measurements.
+- Output-format benchmarks can compare CSV and Parquet in one run, for example:
+  `python scripts/run_benchmarks.py --output-formats csv parquet --particles 10000 --steps 10`.
 - The A100 run was produced from a downloaded repository zip, so the archive did
   not capture a git commit SHA. The results correspond to the CUDA tree/FMM
   implementation present in this branch at the time of the run.
