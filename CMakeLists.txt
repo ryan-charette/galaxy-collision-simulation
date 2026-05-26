@@ -26,6 +26,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CheckLanguage)
+find_package(OpenMP QUIET)
 
 set(HAVE_MPI 0)
 if(ENABLE_MPI)
@@ -84,6 +85,12 @@ if(HAVE_MPI)
     target_compile_definitions(fmm_galaxy_core PUBLIC FMM_GALAXY_HAVE_MPI=1)
 endif()
 
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(fmm_galaxy_core PUBLIC OpenMP::OpenMP_CXX)
+elseif(MSVC)
+    target_compile_options(fmm_galaxy_core PUBLIC /openmp)
+endif()
+
 if(HAVE_CUDA)
     add_library(fmm_galaxy_cuda STATIC
         cpp/cuda/cuda_solver.cu
@@ -131,3 +138,4 @@ message(STATUS "Build summary:")
 message(STATUS "  C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  MPI enabled:  ${HAVE_MPI}")
 message(STATUS "  CUDA enabled: ${HAVE_CUDA}")
+message(STATUS "  OpenMP:       ${OpenMP_CXX_FOUND}")
