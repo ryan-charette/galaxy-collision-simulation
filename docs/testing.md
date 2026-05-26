@@ -80,6 +80,31 @@ python scripts/sweep.py --grid configs/sweeps/theta_leaf_order.yaml --dry-run --
 For a small execution smoke test, pass a small grid and `--limit`, then inspect
 `sweep_summary.csv` for completed and failed runs.
 
+ML dataset generation can be smoke-tested from the standard solver-tuning sweep:
+
+```bash
+python scripts/generate_ml_dataset.py --sweep configs/sweeps/ml_solver_dataset.yaml --output experiments/ml_datasets/smoke_solver_tuning.csv --limit 2
+```
+
+Use a `.parquet` output path for the production artifact when `pandas` and
+`pyarrow` are installed.
+
+To validate all Phase 1 ML dataset types, run a slightly larger smoke subset so
+the force-error table has both direct and approximate solver rows:
+
+```bash
+python scripts/generate_ml_dataset.py --sweep configs/sweeps/ml_solver_dataset.yaml --output experiments/ml_datasets/smoke_all --dataset-type all --limit 6
+```
+
+Supervised ML training can be smoke-tested with the generated CSV artifacts:
+
+```bash
+python -m python.ml.train_solver_cost_model --data experiments/ml_datasets/smoke_all/solver_tuning.csv --output experiments/ml_models/smoke_solver_cost_model.pkl
+python -m python.ml.train_force_error_model --data experiments/ml_datasets/smoke_all/force_error.csv --output experiments/ml_models/smoke_force_error_model.pkl
+python -m python.ml.evaluate_models --model experiments/ml_models/smoke_solver_cost_model.pkl --data experiments/ml_datasets/smoke_all/solver_tuning.csv --output experiments/ml_models/smoke_solver_cost_model.eval.md
+python -m python.ml.recommend_config --n-particles 100000 --target-force-rmse 1e-3 --hardware cpu --cost-model experiments/ml_models/smoke_solver_cost_model.pkl --force-model experiments/ml_models/smoke_force_error_model.pkl
+```
+
 Solver crossover summaries can be regenerated from benchmark artifacts:
 
 ```bash
