@@ -1,0 +1,13 @@
+base_config: configs/smoke_test.toml
+output_root: experiments/sweeps/theta_leaf_order
+
+parameters:
+  simulation.solver: ["tree", "fmm", "cuda-tree", "cuda-fmm"]
+  simulation.n_particles: [1000, 5000, 10000]
+  simulation.tree_theta: [0.4, 0.6, 0.8, 1.0]
+  simulation.tree_leaf_capacity: [8, 16, 32, 64]
+  simulation.fmm_expansion_order: [0, 2, 4]
+
+repetitions: 3
+steps: 20
+output_format: "none"
