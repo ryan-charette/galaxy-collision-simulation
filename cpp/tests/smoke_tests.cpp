@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <random>
 #include <string>
 #include <vector>
@@ -205,7 +206,8 @@ int main() {
                 << "[output]\ndirectory=\"test_output\"\nformat=\"csv\"\n";
     config_file.close();
 
-    const auto loaded = fmmgalaxy::load_config("test_config.toml");
+    const std::filesystem::path test_config_path = "test_config.toml";
+    const auto loaded = fmmgalaxy::load_config(test_config_path);
     failures += !require(loaded.name == "unit", "config parser reads simulation name");
     failures += !require(loaded.dim == 3, "config parser reads 3D dimension");
     failures += !require(loaded.galaxies.size() == 1, "config parser reads galaxy section");
@@ -218,17 +220,15 @@ int main() {
     );
 
     fmmgalaxy::SnapshotWriter writer(loaded);
-    writer.write_metadata(loaded, generated.size());
+    const fmmgalaxy::MpiExecution serial_execution{};
+    const auto provenance = fmmgalaxy::collect_run_provenance(&test_config_path, serial_execution);
+    failures += !require(provenance.config_sha256.size() == 64, "provenance hashes config file");
+    writer.write_metadata(loaded, generated.size(), provenance);
     writer.write_snapshot(0, 0.0, generated);
     writer.write_diagnostics(0, 0.0, diagnostics, generated.size());
     failures += !require(std::filesystem::exists("test_output/snapshot_000000.csv"), "snapshot writer creates csv");
     failures += !require(std::filesystem::exists("test_output/diagnostics.csv"), "snapshot writer creates diagnostics");
-
-    if (failures != 0) {
-        std::cerr << failures << " smoke test checks failed\n";
-        return 1;
-    }
-
-    std::cout << "smoke_tests passed\n";
-    return 0;
-}
+    std::ifstream metadata_file("test_output/metadata.json");
+    const std::string metadata_json(
+        (std::istreambuf_iterator<char>(metadata_file)),
+        std::istreambuf_iterator<char>()
