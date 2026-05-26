@@ -205,7 +205,7 @@ void run_simulation(const fmmgalaxy::SimulationConfig& config) {
     compute_serial_accelerations(particles, config);
 
     auto write_outputs = [&](int step, double time) {
-        if (config.output.format == "none") {
+        if (config.output.format == fmmgalaxy::OutputFormat::None) {
             std::cout << "step " << step << " time " << time << " output disabled\n";
             return;
         }
@@ -245,7 +245,7 @@ void run_simulation(const fmmgalaxy::SimulationConfig& config) {
         }
     }
 
-    if (config.output.format != "none") {
+    if (config.output.format != fmmgalaxy::OutputFormat::None) {
         std::cout << "Wrote snapshots to " << config.output.directory.string() << '\n';
     }
 }
@@ -292,7 +292,7 @@ void run_distributed_simulation(
         if (execution.rank != 0) {
             return;
         }
-        if (config.output.format == "none") {
+        if (config.output.format == fmmgalaxy::OutputFormat::None) {
             std::cout << "step " << step << " time " << time << " output disabled\n";
             return;
         }
@@ -322,7 +322,7 @@ void run_distributed_simulation(
         }
     }
 
-    if (execution.rank == 0 && config.output.format != "none") {
+    if (execution.rank == 0 && config.output.format != fmmgalaxy::OutputFormat::None) {
         std::cout << "Wrote snapshots to " << config.output.directory.string() << '\n';
     }
 }
