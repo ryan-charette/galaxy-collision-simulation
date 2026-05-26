@@ -374,6 +374,17 @@ python -m python.ml.recommend_config --n-particles 100000 --target-force-rmse 1e
 Model training and recommendation workflows are documented in
 `docs/ml_models.md`.
 
+Train and evaluate the first adaptive solver-tuning policy:
+
+```bash
+python -m python.ml.rl.train_policy --episodes 200 --cost-model experiments/ml_models/solver_cost_model.pkl --force-model experiments/ml_models/force_error_model.pkl --output experiments/ml_policies/solver_bandit_policy.pkl
+python -m python.ml.rl.evaluate_policy --policy experiments/ml_policies/solver_bandit_policy.pkl --cost-model experiments/ml_models/solver_cost_model.pkl --force-model experiments/ml_models/force_error_model.pkl --output experiments/ml_policies/solver_bandit_eval.md
+```
+
+The Phase 3 environment starts as a contextual bandit and supports both
+supervised-model `cheap` mode and simulator-launching `real` mode. Details are
+in `docs/rl_environment.md`.
+
 Generate solver crossover plots and tables from runtime and accuracy benchmark
 CSVs:
 
