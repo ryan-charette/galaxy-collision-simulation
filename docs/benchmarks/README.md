@@ -29,6 +29,11 @@ git metadata could not be read.
   `python scripts/run_force_error_benchmarks.py --smoke` for a CI-scale run, or
   omit `--smoke` for the standard sweep. Results are written under
   `experiments/accuracy/`.
+- Generic parameter sweeps are defined in YAML and launched with
+  `python scripts/sweep.py --grid configs/sweeps/theta_leaf_order.yaml`. The
+  sweep runner writes generated configs, raw logs, per-run output directories,
+  `sweep_summary.csv`, optional `sweep_summary.parquet`, and
+  `sweep_metadata.json`.
 - The A100 run was produced from a downloaded repository zip, so the archive did
   not capture a git commit SHA. The results correspond to the CUDA tree/FMM
   implementation present in this branch at the time of the run.
