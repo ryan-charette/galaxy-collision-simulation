@@ -42,9 +42,13 @@ private:
         double mass{0.0};
         Vec2 center_of_mass{};
         CartesianMoments moments{};
+        LocalExpansion local{};
         std::array<int, 8> children{{-1, -1, -1, -1, -1, -1, -1, -1}};
+        int parent{-1};
+        int depth{0};
         std::vector<std::size_t> particle_indices{};
         std::vector<int> far_nodes{};
+        std::vector<int> near_nodes{};
         std::vector<int> near_leaves{};
     };
 
@@ -53,16 +57,19 @@ private:
     FmmOptions options_{};
     std::vector<Node> nodes_{};
     std::vector<int> leaf_indices_{};
+    std::vector<std::vector<int>> levels_{};
     FmmStats stats_{};
 
     void build(const std::vector<Particle>& particles);
     void insert_particle(int node_index, std::size_t particle_index, int depth);
     void subdivide(int node_index);
-    double p2m_m2m(int node_index);
-    void compute_multipole_moments(int node_index);
+    void build_levels();
+    void compute_masses_and_moments();
     void collect_leaves(int node_index);
     void build_interaction_lists();
-    void build_leaf_interactions(int target_leaf_index, int source_node_index);
+    void classify_node_interaction(int target_node_index, int source_node_index);
+    void append_leaf_descendants(int source_node_index, std::vector<int>& leaves) const;
+    void compute_local_expansions();
     Vec2 evaluate_particle(std::size_t target_index, const Node& target_leaf) const;
     FlatFmmData export_flat_fmm() const;
 
