@@ -21,6 +21,7 @@ public:
 private:
     std::filesystem::path directory_;
     std::ofstream diagnostics_stream_;
+    OutputFormat format_{OutputFormat::Csv};
     bool enabled_{true};
 };
 
