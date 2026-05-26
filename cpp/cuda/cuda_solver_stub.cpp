@@ -14,6 +14,10 @@ bool cuda_solver_available() {
     return false;
 }
 
+std::string cuda_device_name() {
+    return "";
+}
+
 void compute_cuda_direct_accelerations(std::vector<Particle>& particles, const PhysicsParams& params) {
     compute_direct_accelerations(particles, params);
 }
