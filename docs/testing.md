@@ -80,6 +80,15 @@ python scripts/sweep.py --grid configs/sweeps/theta_leaf_order.yaml --dry-run --
 For a small execution smoke test, pass a small grid and `--limit`, then inspect
 `sweep_summary.csv` for completed and failed runs.
 
+Solver crossover summaries can be regenerated from benchmark artifacts:
+
+```bash
+python -m python.analysis.solver_crossover --runtime-csv docs/benchmarks/local_cpu_benchmark.csv
+```
+
+When a force-error summary is available, pass it with `--accuracy-csv` to include
+force-error-vs-runtime and target-accuracy tables.
+
 ## Parallel validation
 
 Compare serial and MPI outputs using identical seeds/configs.
