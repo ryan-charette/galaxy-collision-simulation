@@ -71,6 +71,15 @@ max force error, relative force error, energy drift, momentum drift, angular
 momentum drift, runtime per step, particle-steps per second, and optional peak
 memory when `psutil` is installed.
 
+Generic config sweeps can be validated without launching simulations:
+
+```bash
+python scripts/sweep.py --grid configs/sweeps/theta_leaf_order.yaml --dry-run --limit 2
+```
+
+For a small execution smoke test, pass a small grid and `--limit`, then inspect
+`sweep_summary.csv` for completed and failed runs.
+
 ## Parallel validation
 
 Compare serial and MPI outputs using identical seeds/configs.
