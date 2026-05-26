@@ -1,0 +1,14 @@
+base_config: configs/smoke_test.toml
+output_root: experiments/ml_sweeps/solver_tuning
+
+parameters:
+  simulation.solver: ["direct", "tree", "fmm"]
+  simulation.n_particles: [256, 512, 1024]
+  simulation.tree_theta: [0.5, 0.7]
+  simulation.tree_leaf_capacity: [8, 16]
+  simulation.fmm_expansion_order: [0, 2, 4]
+
+repetitions: 2
+steps: 20
+output_format: "csv"
+jobs: 1
