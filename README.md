@@ -363,6 +363,17 @@ Pass `--dataset-type force_error`, `--dataset-type per_step_diagnostics`, or
 `--dataset-type all` to materialize the other Phase 1 datasets from the same
 sweep outputs. Stable schemas are documented in `docs/ml_datasets.md`.
 
+Train baseline supervised solver models from the ML datasets:
+
+```bash
+python -m python.ml.train_solver_cost_model --data experiments/ml_datasets/solver_tuning.parquet --output experiments/ml_models/solver_cost_model.pkl
+python -m python.ml.train_force_error_model --data experiments/ml_datasets/force_error.parquet --output experiments/ml_models/force_error_model.pkl
+python -m python.ml.recommend_config --n-particles 100000 --target-force-rmse 1e-3 --hardware cpu
+```
+
+Model training and recommendation workflows are documented in
+`docs/ml_models.md`.
+
 Generate solver crossover plots and tables from runtime and accuracy benchmark
 CSVs:
 
