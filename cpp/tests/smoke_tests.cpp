@@ -211,6 +211,11 @@ int main() {
     failures += !require(loaded.galaxies.size() == 1, "config parser reads galaxy section");
     failures += !require(loaded.galaxies[0].group_id == 3, "config parser reads group id");
     failures += !require(near(loaded.galaxies[0].position.z, 0.1, 1.0e-12), "config parser reads z position");
+    failures += !require(loaded.output.format == fmmgalaxy::OutputFormat::Csv, "config parser reads csv output format");
+    failures += !require(
+        fmmgalaxy::parse_output_format("parquet") == fmmgalaxy::OutputFormat::Parquet,
+        "config parser accepts parquet output format"
+    );
 
     fmmgalaxy::SnapshotWriter writer(loaded);
     writer.write_metadata(loaded, generated.size());
