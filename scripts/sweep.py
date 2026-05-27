@@ -6,7 +6,6 @@ import argparse
 import csv
 import itertools
 import json
-import os
 import platform
 import shlex
 import subprocess
@@ -19,10 +18,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import tomllib
-
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
+    import tomli as tomllib  # type: ignore
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.experiment_utils import (
+    benchmark_env as experiment_benchmark_env,
+    resolve_simulator_executable,
+)
+
+
 SUMMARY_FIELD_ORDER = [
     "run_id",
     "repetition",
@@ -213,21 +223,15 @@ def sweep_values(parameters: dict[str, Any]) -> list[tuple[dict[str, Any], str]]
 
 
 def resolve_executable(value: str | None) -> Path:
-    if value:
-        executable = Path(value)
-    else:
-        executable = Path("build/fmm_galaxy_sim")
-    if not executable.exists() and executable == Path("build/fmm_galaxy_sim"):
-        for candidate in (Path("build/Release/fmm_galaxy_sim.exe"), Path("build/fmm_galaxy_sim.exe")):
-            if candidate.exists():
-                executable = candidate
-                break
-    if not executable.exists():
-        raise FileNotFoundError(f"Executable not found: {executable}")
-    return executable
+    return resolve_simulator_executable(value)
 
 
-def apply_sweep_overrides(config: dict[str, Any], sweep: dict[str, Any], output_dir: Path, run_name: str) -> None:
+def apply_sweep_overrides(
+    config: dict[str, Any],
+    sweep: dict[str, Any],
+    output_dir: Path,
+    run_name: str,
+) -> None:
     if "steps" in sweep:
         set_dotted(config, "simulation.steps", sweep["steps"])
     if "output_format" in sweep:
@@ -304,11 +308,7 @@ def build_runs(sweep: dict[str, Any], grid_path: Path) -> tuple[Path, list[Sweep
 
 
 def benchmark_env() -> dict[str, str]:
-    env = os.environ.copy()
-    msys_runtime = Path("C:/msys64/ucrt64/bin")
-    if msys_runtime.exists():
-        env["PATH"] = f"{msys_runtime}{os.pathsep}{env.get('PATH', '')}"
-    return env
+    return experiment_benchmark_env()
 
 
 def read_metadata(output_dir: Path) -> dict[str, Any]:
@@ -477,7 +477,10 @@ def write_parquet_summary(path: Path, results: list[SweepResult]) -> bool:
 
 
 def write_sweep_metadata(path: Path, grid_path: Path, results: list[SweepResult], dry_run: bool) -> None:
-    counts = {status: sum(1 for result in results if result.status == status) for status in {"planned", "completed", "failed"}}
+    counts = {
+        status: sum(1 for result in results if result.status == status)
+        for status in {"planned", "completed", "failed"}
+    }
     payload = {
         "grid_path": str(grid_path),
         "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
