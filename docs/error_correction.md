@@ -1,6 +1,7 @@
 # Learned Approximation Error Correction
 
-Trains a model to predict the per-particle acceleration residual:
+The learned error-correction workflow trains a model to predict the
+per-particle acceleration residual:
 
 ```text
 acceleration_direct - acceleration_approx
@@ -82,4 +83,3 @@ one-step error, records prediction throughput, and only runs the short
 constant-acceleration stability sanity check when correction improves held-out
 RMSE. Full integration-level correction should remain gated until this one-step
 report is consistently positive on unseen solver configs.
-
