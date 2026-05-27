@@ -58,6 +58,13 @@ struct DeviceTreeNode {
     double com_y;
     double com_z;
     double moments[35];
+    double local_center_x;
+    double local_center_y;
+    double local_center_z;
+    double local_radius;
+    double local_ax[35];
+    double local_ay[35];
+    double local_az[35];
     int children[8];
     int particle_begin;
     int particle_count;
@@ -81,8 +88,6 @@ struct DeviceMonopoleNode {
 
 struct DeviceFmmLeaf {
     int node_index;
-    int far_begin;
-    int far_count;
     int near_begin;
     int near_count;
 };
@@ -94,6 +99,7 @@ struct DeviceVec3 {
 };
 
 constexpr int tree_stack_capacity = 512;
+constexpr int cuda_threads_per_block = 256;
 constexpr std::uint64_t fnv_offset_basis = 14695981039346656037ull;
 constexpr std::uint64_t fnv_prime = 1099511628211ull;
 
@@ -110,6 +116,19 @@ int checked_int(std::size_t value, const char* name) {
         throw std::runtime_error(std::string(name) + " exceeds CUDA int indexing limit");
     }
     return static_cast<int>(value);
+}
+
+int block_count(std::size_t count) {
+    return static_cast<int>((count + cuda_threads_per_block - 1) / cuda_threads_per_block);
+}
+
+FmmOptions fmm_options_from_cuda_options(CudaTreeOptions options) {
+    FmmOptions fmm_options;
+    fmm_options.theta = options.theta;
+    fmm_options.leaf_capacity = options.leaf_capacity;
+    fmm_options.max_depth = options.max_depth;
+    fmm_options.expansion_order = options.expansion_order;
+    return fmm_options;
 }
 
 std::uint64_t mix_hash(std::uint64_t hash, std::uint64_t value) {
@@ -138,6 +157,15 @@ DeviceTreeNode pack_tree_node(const FlatTreeNode& node) {
     device_node.com_z = node.center_of_mass.z;
     for (std::size_t i = 0; i < node.moments.values.size(); ++i) {
         device_node.moments[i] = node.moments.values[i];
+    }
+    device_node.local_center_x = node.local.center.x;
+    device_node.local_center_y = node.local.center.y;
+    device_node.local_center_z = node.local.center.z;
+    device_node.local_radius = node.local.radius;
+    for (std::size_t i = 0; i < node.local.ax.size(); ++i) {
+        device_node.local_ax[i] = node.local.ax[i];
+        device_node.local_ay[i] = node.local.ay[i];
+        device_node.local_az[i] = node.local.az[i];
     }
     for (std::size_t i = 0; i < node.children.size(); ++i) {
         device_node.children[i] = node.children[i];
@@ -170,8 +198,6 @@ DeviceMonopoleNode pack_monopole_node(const FlatTreeNode& node) {
 DeviceFmmLeaf pack_fmm_leaf(const FlatFmmLeaf& leaf) {
     return DeviceFmmLeaf{
         leaf.node_index,
-        checked_int(leaf.far_begin, "FMM far-list offset"),
-        checked_int(leaf.far_count, "FMM far-list count"),
         checked_int(leaf.near_begin, "FMM near-list offset"),
         checked_int(leaf.near_count, "FMM near-list count"),
     };
@@ -374,7 +400,6 @@ struct CudaWorkspace {
     DeviceBuffer<DeviceMonopoleNode> monopole_nodes{};
     DeviceBuffer<DeviceFmmLeaf> leaves{};
     DeviceBuffer<int> particle_indices{};
-    DeviceBuffer<int> far_node_indices{};
     DeviceBuffer<int> near_leaf_node_indices{};
     DeviceBuffer<int> particle_leaf_indices{};
 
@@ -393,7 +418,6 @@ struct CudaWorkspace {
     PinnedHostBuffer<DeviceMonopoleNode> host_monopole_nodes{};
     PinnedHostBuffer<DeviceFmmLeaf> host_leaves{};
     PinnedHostBuffer<int> host_particle_indices{};
-    PinnedHostBuffer<int> host_far_node_indices{};
     PinnedHostBuffer<int> host_near_leaf_node_indices{};
     PinnedHostBuffer<int> host_particle_leaf_indices{};
 
@@ -629,12 +653,15 @@ __device__ int device_degree(int index) {
 }
 
 __device__ int device_index_of(int x, int y, int z) {
-    for (int i = 0; i < 35; ++i) {
-        if (device_exponents[i][0] == x && device_exponents[i][1] == y && device_exponents[i][2] == z) {
-            return i;
-        }
+    const int total = x + y + z;
+    if (x < 0 || y < 0 || z < 0 || total > 4) {
+        return -1;
     }
-    return -1;
+    const int degree_begin = total * (total + 1) * (total + 2) / 6;
+    const int x_offset = total - x;
+    const int before_x = x_offset * (x_offset + 1) / 2;
+    const int before_y = (total - x) - y;
+    return degree_begin + before_x + before_y;
 }
 
 __device__ void device_zero_polynomial(double* polynomial) {
@@ -878,6 +905,43 @@ __device__ DeviceVec3 device_multipole_acceleration_order(
         gravitational_constant * device_evaluate_component_order<ExpansionOrder>(gy, source.moments, source.mass),
         gravitational_constant * device_evaluate_component_order<ExpansionOrder>(gz, source.moments, source.mass),
     };
+}
+
+__device__ double device_pow_int(double value, int exponent) {
+    double result = 1.0;
+    for (int i = 0; i < exponent; ++i) {
+        result *= value;
+    }
+    return result;
+}
+
+template <int ExpansionOrder>
+__device__ DeviceVec3 device_local_acceleration_order(
+    double tx,
+    double ty,
+    double tz,
+    const DeviceTreeNode& leaf
+) {
+    const double inv_radius = leaf.local_radius > 0.0 ? 1.0 / leaf.local_radius : 1.0;
+    const double ox = (tx - leaf.local_center_x) * inv_radius;
+    const double oy = (ty - leaf.local_center_y) * inv_radius;
+    const double oz = (tz - leaf.local_center_z) * inv_radius;
+    DeviceVec3 acceleration{0.0, 0.0, 0.0};
+
+    for (int i = 0; i < 35; ++i) {
+        if (device_degree(i) > ExpansionOrder) {
+            continue;
+        }
+        const double basis =
+            device_pow_int(ox, device_exponents[i][0]) *
+            device_pow_int(oy, device_exponents[i][1]) *
+            device_pow_int(oz, device_exponents[i][2]);
+        acceleration.x += leaf.local_ax[i] * basis;
+        acceleration.y += leaf.local_ay[i] * basis;
+        acceleration.z += leaf.local_az[i] * basis;
+    }
+
+    return acceleration;
 }
 
 __global__ void direct_tiled_acceleration_kernel(
@@ -1187,7 +1251,6 @@ __global__ void fmm_acceleration_order_soa_kernel(
     const DeviceTreeNode* nodes,
     const int* particle_indices,
     const DeviceFmmLeaf* leaves,
-    const int* far_node_indices,
     const int* near_leaf_node_indices,
     const int* particle_leaf_indices,
     double gravitational_constant,
@@ -1210,103 +1273,16 @@ __global__ void fmm_acceleration_order_soa_kernel(
     const double ty = bodies.y[target_index];
     const double tz = bodies.z[target_index];
     const DeviceFmmLeaf& leaf = leaves[leaf_index];
-    DeviceVec3 acceleration{0.0, 0.0, 0.0};
-
-    for (int offset = 0; offset < leaf.far_count; ++offset) {
-        const int source_node_index = far_node_indices[leaf.far_begin + offset];
-        const DeviceVec3 contribution = device_multipole_acceleration_order<ExpansionOrder>(
-            tx,
-            ty,
-            tz,
-            nodes[source_node_index],
-            gravitational_constant,
-            softening
-        );
-        acceleration.x += contribution.x;
-        acceleration.y += contribution.y;
-        acceleration.z += contribution.z;
-    }
+    DeviceVec3 acceleration = device_local_acceleration_order<ExpansionOrder>(
+        tx,
+        ty,
+        tz,
+        nodes[leaf.node_index]
+    );
 
     for (int near_offset = 0; near_offset < leaf.near_count; ++near_offset) {
         const int source_leaf_node_index = near_leaf_node_indices[leaf.near_begin + near_offset];
         const DeviceTreeNode& source_leaf = nodes[source_leaf_node_index];
-        for (int offset = 0; offset < source_leaf.particle_count; ++offset) {
-            const int source_index = particle_indices[source_leaf.particle_begin + offset];
-            if (source_index == target_index) {
-                continue;
-            }
-            const DeviceVec3 contribution = device_softened_acceleration(
-                tx,
-                ty,
-                tz,
-                bodies.x[source_index],
-                bodies.y[source_index],
-                bodies.z[source_index],
-                bodies.mass[source_index],
-                gravitational_constant,
-                softening
-            );
-            acceleration.x += contribution.x;
-            acceleration.y += contribution.y;
-            acceleration.z += contribution.z;
-        }
-    }
-
-    accelerations.ax[target_index] = acceleration.x;
-    accelerations.ay[target_index] = acceleration.y;
-    accelerations.az[target_index] = acceleration.z;
-}
-
-__global__ void fmm_monopole_acceleration_soa_kernel(
-    DeviceBodySoA bodies,
-    DeviceAccelerationSoA accelerations,
-    int count,
-    const DeviceMonopoleNode* nodes,
-    const int* particle_indices,
-    const DeviceFmmLeaf* leaves,
-    const int* far_node_indices,
-    const int* near_leaf_node_indices,
-    const int* particle_leaf_indices,
-    double gravitational_constant,
-    double softening
-) {
-    const int target_index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (target_index >= count) {
-        return;
-    }
-
-    const int leaf_index = particle_leaf_indices[target_index];
-    if (leaf_index < 0) {
-        accelerations.ax[target_index] = 0.0;
-        accelerations.ay[target_index] = 0.0;
-        accelerations.az[target_index] = 0.0;
-        return;
-    }
-
-    const double tx = bodies.x[target_index];
-    const double ty = bodies.y[target_index];
-    const double tz = bodies.z[target_index];
-    const DeviceFmmLeaf& leaf = leaves[leaf_index];
-    DeviceVec3 acceleration{0.0, 0.0, 0.0};
-
-    for (int offset = 0; offset < leaf.far_count; ++offset) {
-        const int source_node_index = far_node_indices[leaf.far_begin + offset];
-        const DeviceVec3 contribution = device_monopole_acceleration(
-            tx,
-            ty,
-            tz,
-            nodes[source_node_index],
-            gravitational_constant,
-            softening
-        );
-        acceleration.x += contribution.x;
-        acceleration.y += contribution.y;
-        acceleration.z += contribution.z;
-    }
-
-    for (int near_offset = 0; near_offset < leaf.near_count; ++near_offset) {
-        const int source_leaf_node_index = near_leaf_node_indices[leaf.near_begin + near_offset];
-        const DeviceMonopoleNode& source_leaf = nodes[source_leaf_node_index];
         for (int offset = 0; offset < source_leaf.particle_count; ++offset) {
             const int source_index = particle_indices[source_leaf.particle_begin + offset];
             if (source_index == target_index) {
@@ -1363,10 +1339,9 @@ void launch_acceleration(
     const PhysicsParams& params,
     cudaStream_t stream
 ) {
-    const int threads = 256;
-    const int blocks = static_cast<int>((count + threads - 1) / threads);
-    const std::size_t shared_memory_bytes = 4 * threads * sizeof(double);
-    direct_tiled_acceleration_kernel<<<blocks, threads, shared_memory_bytes, stream>>>(
+    const int blocks = block_count(count);
+    const std::size_t shared_memory_bytes = 4 * cuda_threads_per_block * sizeof(double);
+    direct_tiled_acceleration_kernel<<<blocks, cuda_threads_per_block, shared_memory_bytes, stream>>>(
         device_bodies,
         device_accelerations,
         checked_int(count, "particle count"),
@@ -1387,10 +1362,9 @@ void launch_tree_acceleration(
     CudaTreeOptions options,
     cudaStream_t stream
 ) {
-    const int threads = 256;
-    const int blocks = static_cast<int>((count + threads - 1) / threads);
+    const int blocks = block_count(count);
     if (options.expansion_order <= 2) {
-        tree_acceleration_order_soa_kernel<2><<<blocks, threads, 0, stream>>>(
+        tree_acceleration_order_soa_kernel<2><<<blocks, cuda_threads_per_block, 0, stream>>>(
             device_bodies,
             device_accelerations,
             checked_int(count, "particle count"),
@@ -1402,7 +1376,7 @@ void launch_tree_acceleration(
             options.theta
         );
     } else {
-        tree_acceleration_order_soa_kernel<4><<<blocks, threads, 0, stream>>>(
+        tree_acceleration_order_soa_kernel<4><<<blocks, cuda_threads_per_block, 0, stream>>>(
             device_bodies,
             device_accelerations,
             checked_int(count, "particle count"),
@@ -1428,9 +1402,8 @@ void launch_tree_monopole_acceleration(
     CudaTreeOptions options,
     cudaStream_t stream
 ) {
-    const int threads = 256;
-    const int blocks = static_cast<int>((count + threads - 1) / threads);
-    tree_monopole_acceleration_soa_kernel<<<blocks, threads, 0, stream>>>(
+    const int blocks = block_count(count);
+    tree_monopole_acceleration_soa_kernel<<<blocks, cuda_threads_per_block, 0, stream>>>(
         device_bodies,
         device_accelerations,
         checked_int(count, "particle count"),
@@ -1451,38 +1424,47 @@ void launch_fmm_acceleration(
     const DeviceTreeNode* device_nodes,
     const int* device_particle_indices,
     const DeviceFmmLeaf* device_leaves,
-    const int* device_far_node_indices,
     const int* device_near_leaf_node_indices,
     const int* device_particle_leaf_indices,
     const PhysicsParams& params,
     CudaTreeOptions options,
     cudaStream_t stream
 ) {
-    const int threads = 256;
-    const int blocks = static_cast<int>((count + threads - 1) / threads);
-    if (options.expansion_order <= 2) {
-        fmm_acceleration_order_soa_kernel<2><<<blocks, threads, 0, stream>>>(
+    const int blocks = block_count(count);
+    if (options.expansion_order <= 0) {
+        fmm_acceleration_order_soa_kernel<0><<<blocks, cuda_threads_per_block, 0, stream>>>(
             device_bodies,
             device_accelerations,
             checked_int(count, "particle count"),
             device_nodes,
             device_particle_indices,
             device_leaves,
-            device_far_node_indices,
+            device_near_leaf_node_indices,
+            device_particle_leaf_indices,
+            params.gravitational_constant,
+            params.softening
+        );
+    } else if (options.expansion_order <= 2) {
+        fmm_acceleration_order_soa_kernel<2><<<blocks, cuda_threads_per_block, 0, stream>>>(
+            device_bodies,
+            device_accelerations,
+            checked_int(count, "particle count"),
+            device_nodes,
+            device_particle_indices,
+            device_leaves,
             device_near_leaf_node_indices,
             device_particle_leaf_indices,
             params.gravitational_constant,
             params.softening
         );
     } else {
-        fmm_acceleration_order_soa_kernel<4><<<blocks, threads, 0, stream>>>(
+        fmm_acceleration_order_soa_kernel<4><<<blocks, cuda_threads_per_block, 0, stream>>>(
             device_bodies,
             device_accelerations,
             checked_int(count, "particle count"),
             device_nodes,
             device_particle_indices,
             device_leaves,
-            device_far_node_indices,
             device_near_leaf_node_indices,
             device_particle_leaf_indices,
             params.gravitational_constant,
@@ -1492,41 +1474,9 @@ void launch_fmm_acceleration(
     throw_on_cuda(cudaGetLastError(), "launch CUDA FMM acceleration kernel");
 }
 
-void launch_fmm_monopole_acceleration(
-    DeviceBodySoA device_bodies,
-    DeviceAccelerationSoA device_accelerations,
-    std::size_t count,
-    const DeviceMonopoleNode* device_nodes,
-    const int* device_particle_indices,
-    const DeviceFmmLeaf* device_leaves,
-    const int* device_far_node_indices,
-    const int* device_near_leaf_node_indices,
-    const int* device_particle_leaf_indices,
-    const PhysicsParams& params,
-    cudaStream_t stream
-) {
-    const int threads = 256;
-    const int blocks = static_cast<int>((count + threads - 1) / threads);
-    fmm_monopole_acceleration_soa_kernel<<<blocks, threads, 0, stream>>>(
-        device_bodies,
-        device_accelerations,
-        checked_int(count, "particle count"),
-        device_nodes,
-        device_particle_indices,
-        device_leaves,
-        device_far_node_indices,
-        device_near_leaf_node_indices,
-        device_particle_leaf_indices,
-        params.gravitational_constant,
-        params.softening
-    );
-    throw_on_cuda(cudaGetLastError(), "launch CUDA monopole FMM acceleration kernel");
-}
-
 void launch_kick(DeviceParticleSoA device_particles, std::size_t count, double dt, cudaStream_t stream) {
-    const int threads = 256;
-    const int blocks = static_cast<int>((count + threads - 1) / threads);
-    kick_soa_kernel<<<blocks, threads, 0, stream>>>(
+    const int blocks = block_count(count);
+    kick_soa_kernel<<<blocks, cuda_threads_per_block, 0, stream>>>(
         device_particles,
         checked_int(count, "particle count"),
         dt
@@ -1535,9 +1485,8 @@ void launch_kick(DeviceParticleSoA device_particles, std::size_t count, double d
 }
 
 void launch_drift(DeviceParticleSoA device_particles, std::size_t count, double dt, cudaStream_t stream) {
-    const int threads = 256;
-    const int blocks = static_cast<int>((count + threads - 1) / threads);
-    drift_soa_kernel<<<blocks, threads, 0, stream>>>(
+    const int blocks = block_count(count);
+    drift_soa_kernel<<<blocks, cuda_threads_per_block, 0, stream>>>(
         device_particles,
         checked_int(count, "particle count"),
         dt
@@ -1729,21 +1678,13 @@ void compute_cuda_fmm_accelerations(
         return;
     }
     if (!cuda_solver_available()) {
-        FmmOptions fmm_options;
-        fmm_options.theta = options.theta;
-        fmm_options.leaf_capacity = options.leaf_capacity;
-        fmm_options.max_depth = options.max_depth;
-        fmm_options.expansion_order = options.expansion_order;
+        const FmmOptions fmm_options = fmm_options_from_cuda_options(options);
         compute_fmm_accelerations(particles, params, fmm_options);
         return;
     }
 
     checked_int(particles.size(), "particle count");
-    FmmOptions fmm_options;
-    fmm_options.theta = options.theta;
-    fmm_options.leaf_capacity = options.leaf_capacity;
-    fmm_options.max_depth = options.max_depth;
-    fmm_options.expansion_order = options.expansion_order;
+    const FmmOptions fmm_options = fmm_options_from_cuda_options(options);
     const FlatFmmData fmm = build_flat_fmm(particles, params, fmm_options);
     if (fmm.tree.nodes.empty() || fmm.leaves.empty()) {
         return;
@@ -1779,15 +1720,6 @@ void compute_cuda_fmm_accelerations(
         "copy CUDA FMM leaves"
     );
     upload_vector(
-        fmm.far_node_indices,
-        workspace.host_far_node_indices,
-        workspace.far_node_indices,
-        stream,
-        "allocate pinned host FMM far-list indices",
-        "allocate CUDA FMM far-list indices",
-        "copy CUDA FMM far-list indices"
-    );
-    upload_vector(
         fmm.near_leaf_node_indices,
         workspace.host_near_leaf_node_indices,
         workspace.near_leaf_node_indices,
@@ -1805,35 +1737,6 @@ void compute_cuda_fmm_accelerations(
         "allocate CUDA FMM particle-leaf indices",
         "copy CUDA FMM particle-leaf indices"
     );
-
-    if (options.expansion_order <= 0) {
-        const std::vector<DeviceMonopoleNode> host_nodes = pack_monopole_nodes(fmm.tree);
-        upload_vector(
-            host_nodes,
-            workspace.host_monopole_nodes,
-            workspace.monopole_nodes,
-            stream,
-            "allocate pinned host monopole FMM nodes",
-            "allocate CUDA monopole FMM nodes",
-            "copy CUDA monopole FMM nodes"
-        );
-
-        launch_fmm_monopole_acceleration(
-            workspace.body_arrays(),
-            workspace.acceleration_arrays(),
-            particles.size(),
-            workspace.monopole_nodes.data(),
-            workspace.particle_indices.data(),
-            workspace.leaves.data(),
-            workspace.far_node_indices.data(),
-            workspace.near_leaf_node_indices.data(),
-            workspace.particle_leaf_indices.data(),
-            params,
-            stream
-        );
-        download_acceleration_arrays(workspace, particles, stream);
-        return;
-    }
 
     const std::vector<DeviceTreeNode> host_nodes = pack_tree_nodes(fmm.tree);
     upload_vector(
@@ -1853,7 +1756,6 @@ void compute_cuda_fmm_accelerations(
         workspace.tree_nodes.data(),
         workspace.particle_indices.data(),
         workspace.leaves.data(),
-        workspace.far_node_indices.data(),
         workspace.near_leaf_node_indices.data(),
         workspace.particle_leaf_indices.data(),
         params,
@@ -1977,11 +1879,7 @@ void cuda_fmm_leapfrog_step(
         return;
     }
     if (!cuda_solver_available()) {
-        FmmOptions fmm_options;
-        fmm_options.theta = options.theta;
-        fmm_options.leaf_capacity = options.leaf_capacity;
-        fmm_options.max_depth = options.max_depth;
-        fmm_options.expansion_order = options.expansion_order;
+        const FmmOptions fmm_options = fmm_options_from_cuda_options(options);
         auto compute = [&params, fmm_options](std::vector<Particle>& state) {
             compute_fmm_accelerations(state, params, fmm_options);
         };
@@ -1997,11 +1895,7 @@ void cuda_fmm_leapfrog_step(
     launch_drift(workspace.particle_arrays(), particles.size(), dt, stream);
     download_particle_arrays(workspace, particles, stream);
 
-    FmmOptions fmm_options;
-    fmm_options.theta = options.theta;
-    fmm_options.leaf_capacity = options.leaf_capacity;
-    fmm_options.max_depth = options.max_depth;
-    fmm_options.expansion_order = options.expansion_order;
+    const FmmOptions fmm_options = fmm_options_from_cuda_options(options);
     const FlatFmmData fmm = build_flat_fmm(particles, params, fmm_options);
     if (fmm.tree.nodes.empty() || fmm.leaves.empty()) {
         return;
@@ -2033,15 +1927,6 @@ void cuda_fmm_leapfrog_step(
         "copy CUDA FMM leaves"
     );
     upload_vector(
-        fmm.far_node_indices,
-        workspace.host_far_node_indices,
-        workspace.far_node_indices,
-        stream,
-        "allocate pinned host FMM far-list indices",
-        "allocate CUDA FMM far-list indices",
-        "copy CUDA FMM far-list indices"
-    );
-    upload_vector(
         fmm.near_leaf_node_indices,
         workspace.host_near_leaf_node_indices,
         workspace.near_leaf_node_indices,
@@ -2060,56 +1945,29 @@ void cuda_fmm_leapfrog_step(
         "copy CUDA FMM particle-leaf indices"
     );
 
-    if (options.expansion_order <= 0) {
-        const std::vector<DeviceMonopoleNode> host_nodes = pack_monopole_nodes(fmm.tree);
-        upload_vector(
-            host_nodes,
-            workspace.host_monopole_nodes,
-            workspace.monopole_nodes,
-            stream,
-            "allocate pinned host monopole FMM nodes",
-            "allocate CUDA monopole FMM nodes",
-            "copy CUDA monopole FMM nodes"
-        );
-        launch_fmm_monopole_acceleration(
-            workspace.body_arrays(),
-            workspace.acceleration_arrays(),
-            particles.size(),
-            workspace.monopole_nodes.data(),
-            workspace.particle_indices.data(),
-            workspace.leaves.data(),
-            workspace.far_node_indices.data(),
-            workspace.near_leaf_node_indices.data(),
-            workspace.particle_leaf_indices.data(),
-            params,
-            stream
-        );
-    } else {
-        const std::vector<DeviceTreeNode> host_nodes = pack_tree_nodes(fmm.tree);
-        upload_vector(
-            host_nodes,
-            workspace.host_tree_nodes,
-            workspace.tree_nodes,
-            stream,
-            "allocate pinned host FMM nodes",
-            "allocate CUDA FMM nodes",
-            "copy CUDA FMM nodes"
-        );
-        launch_fmm_acceleration(
-            workspace.body_arrays(),
-            workspace.acceleration_arrays(),
-            particles.size(),
-            workspace.tree_nodes.data(),
-            workspace.particle_indices.data(),
-            workspace.leaves.data(),
-            workspace.far_node_indices.data(),
-            workspace.near_leaf_node_indices.data(),
-            workspace.particle_leaf_indices.data(),
-            params,
-            options,
-            stream
-        );
-    }
+    const std::vector<DeviceTreeNode> host_nodes = pack_tree_nodes(fmm.tree);
+    upload_vector(
+        host_nodes,
+        workspace.host_tree_nodes,
+        workspace.tree_nodes,
+        stream,
+        "allocate pinned host FMM nodes",
+        "allocate CUDA FMM nodes",
+        "copy CUDA FMM nodes"
+    );
+    launch_fmm_acceleration(
+        workspace.body_arrays(),
+        workspace.acceleration_arrays(),
+        particles.size(),
+        workspace.tree_nodes.data(),
+        workspace.particle_indices.data(),
+        workspace.leaves.data(),
+        workspace.near_leaf_node_indices.data(),
+        workspace.particle_leaf_indices.data(),
+        params,
+        options,
+        stream
+    );
 
     launch_kick(workspace.particle_arrays(), particles.size(), 0.5 * dt, stream);
     download_particle_arrays(workspace, particles, stream);
