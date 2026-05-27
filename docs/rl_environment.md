@@ -1,9 +1,9 @@
 # Adaptive Solver Tuning Environment
 
-Phase 3 adds a Gymnasium-compatible one-step environment for adaptive solver
-tuning. The environment is a contextual bandit first: the agent observes the
-simulation context, chooses one solver configuration, and receives a reward from
-runtime, force-error, and drift terms.
+The adaptive solver-tuning workflow adds a Gymnasium-compatible one-step
+environment. The environment is a contextual bandit first: the agent observes
+the simulation context, chooses one solver configuration, and receives a reward
+from runtime, force-error, and drift terms.
 
 The implementation lives in:
 
@@ -78,4 +78,3 @@ python -m python.ml.rl.evaluate_policy \
 
 The report ranks the learned policy and fixed baselines by mean reward and
 includes mean runtime cost, mean force error, and selected solver families.
-
