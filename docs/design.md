@@ -70,7 +70,7 @@ Future extension:
 - block timestepping,
 - higher-order symplectic schemes.
 
-## 3. Solver roadmap
+## 3. Solver Development
 
 ### 3.1 Direct-sum baseline
 
@@ -120,7 +120,7 @@ The intended FMM pipeline is:
 5. **L2P:** evaluate local expansions at particle positions,
 6. **P2P:** compute direct interactions for near-field particles/nodes.
 
-The current implementation supports `p=0` monopole, `p=2` quadrupole, and `p=4` fourth-order Cartesian moments. Orders above `p=4` are intentionally out of scope for this project.
+The solver supports `p=0` monopole, `p=2` quadrupole, and `p=4` fourth-order Cartesian moments. Orders above `p=4` are intentionally out of scope for this project.
 
 ### 3.5 Near/far criteria
 
