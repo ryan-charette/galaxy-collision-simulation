@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any
 
 import numpy as np
@@ -38,6 +39,13 @@ FORCE_NUMERIC_FEATURES = [
     "estimated_tree_depth",
 ]
 FORCE_CATEGORICAL_FEATURES = ["solver"]
+
+
+def estimate_tree_depth(n_particles: int, leaf_capacity: int) -> int:
+    if n_particles <= leaf_capacity:
+        return 1
+    ratio = max(n_particles / max(leaf_capacity, 1), 1.0)
+    return max(1, int(math.ceil(math.log(ratio, 8.0))) + 1)
 
 
 def runtime_feature_columns(frame: pd.DataFrame) -> tuple[list[str], list[str]]:
