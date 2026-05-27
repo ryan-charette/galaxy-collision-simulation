@@ -6,7 +6,6 @@ import argparse
 import csv
 import json
 import math
-import os
 import platform
 import statistics
 import struct
@@ -26,6 +25,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from python.utils.snapshots import load_diagnostics, load_snapshot
+from scripts.experiment_utils import (
+    benchmark_env,
+    resolve_simulator_executable,
+    safe_float_label,
+    write_two_galaxy_config,
+)
 
 
 EPSILON = 1.0e-12
@@ -63,10 +68,6 @@ class AccuracyResult:
     output_dir: Path
 
 
-def _safe_float_label(value: float) -> str:
-    return f"{value:g}".replace("-", "m").replace(".", "p")
-
-
 def _case_label(
     solver: str,
     particles: int,
@@ -76,8 +77,8 @@ def _case_label(
     softening: float,
 ) -> str:
     return (
-        f"{solver}_n{particles}_theta{_safe_float_label(theta)}_leaf{leaf_capacity}_"
-        f"p{expansion_order}_soft{_safe_float_label(softening)}"
+        f"{solver}_n{particles}_theta{safe_float_label(theta)}_leaf{leaf_capacity}_"
+        f"p{expansion_order}_soft{safe_float_label(softening)}"
     )
 
 
@@ -93,61 +94,22 @@ def write_config(
     expansion_order: int,
     softening: float,
 ) -> None:
-    half = particles // 2
-    rest = particles - half
-    config = f"""[simulation]
-name = "accuracy_{solver}_{particles}"
-dim = 3
-solver = "{solver}"
-seed = 20260526
-n_particles = {particles}
-steps = {steps}
-dt = 0.01
-snapshot_every = {snapshot_every}
-tree_theta = {theta}
-tree_leaf_capacity = {leaf_capacity}
-fmm_expansion_order = {expansion_order}
-
-[physics]
-G = 1.0
-softening = {softening}
-
-[galaxy.primary]
-n_particles = {half}
-mass = 1.0
-radius = 0.85
-position = [-0.72, -0.10, 0.06]
-velocity = [0.34, 0.10, -0.015]
-orientation = 0.25
-group_id = 0
-thickness = 0.045
-inclination = 0.62
-
-[galaxy.secondary]
-n_particles = {rest}
-mass = 1.0
-radius = 0.85
-position = [0.72, 0.10, -0.06]
-velocity = [-0.34, -0.10, 0.015]
-orientation = 3.42
-group_id = 1
-thickness = 0.045
-inclination = -0.72
-
-[output]
-directory = "{output.as_posix()}"
-format = "csv"
-"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(config, encoding="utf-8")
-
-
-def benchmark_env() -> dict[str, str]:
-    env = os.environ.copy()
-    msys_runtime = Path("C:/msys64/ucrt64/bin")
-    if msys_runtime.exists():
-        env["PATH"] = f"{msys_runtime}{os.pathsep}{env.get('PATH', '')}"
-    return env
+    write_two_galaxy_config(
+        path,
+        name=f"accuracy_{solver}_{particles}",
+        solver=solver,
+        particles=particles,
+        steps=steps,
+        dt=0.01,
+        snapshot_every=snapshot_every,
+        output=output,
+        output_format="csv",
+        theta=theta,
+        leaf_capacity=leaf_capacity,
+        expansion_order=expansion_order,
+        softening=softening,
+        seed=20260526,
+    )
 
 
 def run_simulation(executable: Path, config_path: Path, output_dir: Path) -> RunResult:
@@ -200,7 +162,8 @@ def force_error(reference_dir: Path, candidate_dir: Path) -> tuple[float, float,
     reference_norm = np.linalg.norm(reference.accelerations, axis=1)
     force_rmse = float(np.sqrt(np.mean(diff_norm * diff_norm)))
     max_force_error = float(np.max(diff_norm))
-    relative_force_error = float(force_rmse / max(float(np.sqrt(np.mean(reference_norm * reference_norm))), EPSILON))
+    reference_rmse = float(np.sqrt(np.mean(reference_norm * reference_norm)))
+    relative_force_error = float(force_rmse / max(reference_rmse, EPSILON))
     return force_rmse, max_force_error, relative_force_error
 
 
@@ -235,7 +198,9 @@ def run_suite(args: argparse.Namespace) -> list[AccuracyResult]:
     for particles in args.particles:
         for softening in args.softening:
             reference_key = (particles, softening)
-            reference_output = args.output / "runs" / f"direct_reference_n{particles}_soft{_safe_float_label(softening)}"
+            reference_output = (
+                args.output / "runs" / f"direct_reference_n{particles}_soft{safe_float_label(softening)}"
+            )
             reference_config = args.output / "configs" / f"{reference_output.name}.toml"
             write_config(
                 reference_config,
@@ -282,7 +247,9 @@ def run_suite(args: argparse.Namespace) -> list[AccuracyResult]:
                                 references[reference_key].output_dir,
                                 output_dir,
                             )
-                            energy_drift, momentum_drift, angular_momentum_drift = diagnostics_drift(output_dir)
+                            energy_drift, momentum_drift, angular_momentum_drift = diagnostics_drift(
+                                output_dir
+                            )
                             results.append(
                                 AccuracyResult(
                                     solver=solver,
@@ -386,7 +353,8 @@ def write_markdown_summary(path: Path, results: list[AccuracyResult]) -> None:
         "",
         f"Commit: `{commit_summary}`",
         "",
-        "| Solver | N | Theta | Leaf | p | Softening | Rel force error | RMSE | Max error | Energy drift | Momentum drift | Particle-steps/s |",
+        "| Solver | N | Theta | Leaf | p | Softening | Rel force error | RMSE | "
+        "Max error | Energy drift | Momentum drift | Particle-steps/s |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for result in rows:
@@ -466,7 +434,14 @@ def plot_results(output: Path, results: list[AccuracyResult]) -> None:
         "Tree theta",
         "Relative force error vs direct",
     )
-    _scatter(output / "energy_drift.png", "particles", "energy_drift", "Particles", "Energy drift", log_x=True)
+    _scatter(
+        output / "energy_drift.png",
+        "particles",
+        "energy_drift",
+        "Particles",
+        "Energy drift",
+        log_x=True,
+    )
     _scatter(
         output / "momentum_drift.png",
         "particles",
@@ -495,7 +470,14 @@ def write_png(path: Path, width: int, height: int, pixels: bytearray) -> None:
     path.write_bytes(png)
 
 
-def draw_pixel(pixels: bytearray, width: int, height: int, x: int, y: int, color: tuple[int, int, int]) -> None:
+def draw_pixel(
+    pixels: bytearray,
+    width: int,
+    height: int,
+    x: int,
+    y: int,
+    color: tuple[int, int, int],
+) -> None:
     if 0 <= x < width and 0 <= y < height:
         offset = (y * width + x) * 3
         pixels[offset : offset + 3] = bytes(color)
@@ -602,7 +584,13 @@ def plot_basic_scatter(
 
 def plot_results_basic_png(output: Path, results: list[AccuracyResult]) -> None:
     output.mkdir(parents=True, exist_ok=True)
-    plot_basic_scatter(output / "force_error_vs_n.png", results, "particles", "relative_force_error", log_x=True)
+    plot_basic_scatter(
+        output / "force_error_vs_n.png",
+        results,
+        "particles",
+        "relative_force_error",
+        log_x=True,
+    )
     plot_basic_scatter(output / "force_error_vs_theta.png", results, "theta", "relative_force_error")
     plot_basic_scatter(output / "energy_drift.png", results, "particles", "energy_drift", log_x=True)
     plot_basic_scatter(output / "momentum_drift.png", results, "particles", "momentum_drift", log_x=True)
@@ -632,14 +620,7 @@ def parse_args() -> argparse.Namespace:
         args.steps = 2
         args.diagnostic_samples = 2
 
-    if not args.executable.exists() and args.executable == Path("build/fmm_galaxy_sim"):
-        for candidate in (Path("build/Release/fmm_galaxy_sim.exe"), Path("build/fmm_galaxy_sim.exe")):
-            if candidate.exists():
-                args.executable = candidate
-                break
-
-    if not args.executable.exists():
-        raise FileNotFoundError(f"Executable not found: {args.executable}")
+    args.executable = resolve_simulator_executable(args.executable)
     if args.diagnostic_samples <= 0:
         raise ValueError("--diagnostic-samples must be positive")
     return args
