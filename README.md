@@ -169,7 +169,7 @@ python/analysis/static plots
 python/animation/MP4/GIF rendering
 configs/        simulation configs
 experiments/    output destinations and experiment notes
-docs/           design, architecture, roadmap, testing plan
+docs/           design, architecture, milestones, testing plan
 scripts/        build and smoke-test helpers
 ```
 
@@ -360,7 +360,7 @@ drift fields. Use `--limit N` for a smoke subset and `--resume` to reuse complet
 run directories.
 
 Pass `--dataset-type force_error`, `--dataset-type per_step_diagnostics`, or
-`--dataset-type all` to materialize the other Phase 1 datasets from the same
+`--dataset-type all` to materialize the other ML dataset types from the same
 sweep outputs. Stable schemas are documented in `docs/ml_datasets.md`.
 
 Train baseline supervised solver models from the ML datasets:
@@ -381,9 +381,9 @@ python -m python.ml.rl.train_policy --episodes 200 --cost-model experiments/ml_m
 python -m python.ml.rl.evaluate_policy --policy experiments/ml_policies/solver_bandit_policy.pkl --cost-model experiments/ml_models/solver_cost_model.pkl --force-model experiments/ml_models/force_error_model.pkl --output experiments/ml_policies/solver_bandit_eval.md
 ```
 
-The Phase 3 environment starts as a contextual bandit and supports both
-supervised-model `cheap` mode and simulator-launching `real` mode. Details are
-in `docs/rl_environment.md`.
+The adaptive solver-tuning environment starts as a contextual bandit and
+supports both supervised-model `cheap` mode and simulator-launching `real` mode.
+Details are in `docs/rl_environment.md`.
 
 Generate, train, and evaluate a learned acceleration-residual correction model:
 
@@ -393,9 +393,9 @@ python -m python.ml.train_accel_residual_model --data experiments/ml_datasets/ac
 python -m python.ml.evaluate_accel_residual_model --model experiments/ml_models/accel_residual_model.pkl --data experiments/ml_datasets/accel_residuals.csv --heldout-from-model --stability-steps 5 --output experiments/ml_models/accel_residual_eval.md
 ```
 
-This workflow predicts direct-minus-approximate acceleration residuals
-and reports whether corrected one-step forces improve on held-out solver
-configs. Details are in `docs/error_correction.md`.
+This workflow predicts direct-minus-approximate acceleration residuals and
+reports whether corrected one-step forces improve on held-out solver configs.
+Details are in `docs/error_correction.md`.
 
 Generate solver crossover plots and tables from runtime and accuracy benchmark
 CSVs:
