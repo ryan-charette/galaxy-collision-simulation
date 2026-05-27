@@ -60,25 +60,47 @@ CliOptions parse_args(int argc, char** argv) {
     return options;
 }
 
-bool uses_tree_solver(const std::string& solver) {
-    return solver == "tree" || solver == "treecode" || solver == "barnes-hut";
+enum class SolverKind {
+    Direct,
+    Tree,
+    Fmm,
+    CudaDirect,
+    CudaTree,
+    CudaFmm,
+};
+
+std::string unknown_solver_message(const std::string& solver) {
+    return "Unknown solver '" + solver +
+           "'. Use direct, tree, fmm, cuda-direct, cuda-tree, or cuda-fmm.";
 }
 
-bool uses_fmm_solver(const std::string& solver) {
-    return solver == "fmm" || solver == "monopole-fmm" || solver == "quadrupole-fmm" ||
-           solver == "p4-fmm" || solver == "cartesian-fmm";
+SolverKind classify_solver(const std::string& solver) {
+    if (solver == "direct") {
+        return SolverKind::Direct;
+    }
+    if (solver == "tree" || solver == "treecode" || solver == "barnes-hut") {
+        return SolverKind::Tree;
+    }
+    if (solver == "fmm" || solver == "monopole-fmm" || solver == "quadrupole-fmm" ||
+        solver == "p4-fmm" || solver == "cartesian-fmm") {
+        return SolverKind::Fmm;
+    }
+    if (solver == "cuda" || solver == "cuda-direct" || solver == "gpu-direct") {
+        return SolverKind::CudaDirect;
+    }
+    if (solver == "cuda-tree" || solver == "gpu-tree" || solver == "cuda-barnes-hut") {
+        return SolverKind::CudaTree;
+    }
+    if (solver == "cuda-fmm" || solver == "gpu-fmm") {
+        return SolverKind::CudaFmm;
+    }
+    throw std::runtime_error(unknown_solver_message(solver));
 }
 
-bool uses_cuda_direct_solver(const std::string& solver) {
-    return solver == "cuda" || solver == "cuda-direct" || solver == "gpu-direct";
-}
-
-bool uses_cuda_tree_solver(const std::string& solver) {
-    return solver == "cuda-tree" || solver == "gpu-tree" || solver == "cuda-barnes-hut";
-}
-
-bool uses_cuda_fmm_solver(const std::string& solver) {
-    return solver == "cuda-fmm" || solver == "gpu-fmm";
+bool is_cuda_solver(SolverKind solver) {
+    return solver == SolverKind::CudaDirect ||
+           solver == SolverKind::CudaTree ||
+           solver == SolverKind::CudaFmm;
 }
 
 fmmgalaxy::FmmOptions fmm_options_from_config(const fmmgalaxy::SimulationConfig& config) {
@@ -89,7 +111,7 @@ fmmgalaxy::FmmOptions fmm_options_from_config(const fmmgalaxy::SimulationConfig&
     return options;
 }
 
-fmmgalaxy::CudaTreeOptions cuda_tree_options_from_config(const fmmgalaxy::SimulationConfig& config) {
+fmmgalaxy::CudaTreeOptions cuda_options_from_config(const fmmgalaxy::SimulationConfig& config) {
     fmmgalaxy::CudaTreeOptions options;
     options.theta = config.tree_theta;
     options.leaf_capacity = config.tree_leaf_capacity;
@@ -99,11 +121,14 @@ fmmgalaxy::CudaTreeOptions cuda_tree_options_from_config(const fmmgalaxy::Simula
 
 void compute_serial_accelerations(
     std::vector<fmmgalaxy::Particle>& particles,
-    const fmmgalaxy::SimulationConfig& config
+    const fmmgalaxy::SimulationConfig& config,
+    SolverKind solver
 ) {
-    if (config.solver == "direct") {
+    switch (solver) {
+    case SolverKind::Direct:
         fmmgalaxy::compute_direct_accelerations(particles, config.physics);
-    } else if (uses_tree_solver(config.solver)) {
+        return;
+    case SolverKind::Tree:
         fmmgalaxy::compute_tree_accelerations(
             particles,
             config.physics,
@@ -111,47 +136,52 @@ void compute_serial_accelerations(
             config.tree_leaf_capacity,
             config.fmm_expansion_order
         );
-    } else if (uses_fmm_solver(config.solver)) {
+        return;
+    case SolverKind::Fmm:
         fmmgalaxy::compute_fmm_accelerations(
             particles,
             config.physics,
             fmm_options_from_config(config)
         );
-    } else if (uses_cuda_direct_solver(config.solver)) {
+        return;
+    case SolverKind::CudaDirect:
         fmmgalaxy::compute_cuda_direct_accelerations(particles, config.physics);
-    } else if (uses_cuda_tree_solver(config.solver)) {
+        return;
+    case SolverKind::CudaTree:
         fmmgalaxy::compute_cuda_tree_accelerations(
             particles,
             config.physics,
-            cuda_tree_options_from_config(config)
+            cuda_options_from_config(config)
         );
-    } else if (uses_cuda_fmm_solver(config.solver)) {
+        return;
+    case SolverKind::CudaFmm:
         fmmgalaxy::compute_cuda_fmm_accelerations(
             particles,
             config.physics,
-            cuda_tree_options_from_config(config)
+            cuda_options_from_config(config)
         );
-    } else {
-        throw std::runtime_error(
-            "Unknown solver '" + config.solver +
-            "'. Use direct, tree, fmm, cuda-direct, cuda-tree, or cuda-fmm."
-        );
+        return;
     }
+    throw std::logic_error("Unhandled solver kind");
 }
 
 void compute_owned_accelerations(
     std::vector<fmmgalaxy::Particle>& particles,
     const fmmgalaxy::SimulationConfig& config,
-    const fmmgalaxy::OwnershipRange& owned
+    const fmmgalaxy::OwnershipRange& owned,
+    SolverKind solver
 ) {
-    if (config.solver == "direct") {
+    switch (solver) {
+    case SolverKind::Direct:
         fmmgalaxy::compute_direct_accelerations_for_targets(
             particles,
             config.physics,
             owned.begin,
             owned.end
         );
-    } else if (uses_tree_solver(config.solver) || uses_fmm_solver(config.solver)) {
+        return;
+    case SolverKind::Tree:
+    case SolverKind::Fmm:
         fmmgalaxy::compute_fmm_accelerations_for_targets(
             particles,
             config.physics,
@@ -159,38 +189,38 @@ void compute_owned_accelerations(
             owned.end,
             fmm_options_from_config(config)
         );
-    } else if (uses_cuda_direct_solver(config.solver)) {
+        return;
+    case SolverKind::CudaDirect:
         fmmgalaxy::compute_cuda_direct_accelerations(particles, config.physics);
-    } else if (uses_cuda_tree_solver(config.solver)) {
+        return;
+    case SolverKind::CudaTree:
         fmmgalaxy::compute_cuda_tree_accelerations(
             particles,
             config.physics,
-            cuda_tree_options_from_config(config)
+            cuda_options_from_config(config)
         );
-    } else if (uses_cuda_fmm_solver(config.solver)) {
+        return;
+    case SolverKind::CudaFmm:
         fmmgalaxy::compute_cuda_fmm_accelerations(
             particles,
             config.physics,
-            cuda_tree_options_from_config(config)
+            cuda_options_from_config(config)
         );
-    } else {
-        throw std::runtime_error(
-            "Unknown solver '" + config.solver +
-            "'. Use direct, tree, fmm, cuda-direct, cuda-tree, or cuda-fmm."
-        );
+        return;
     }
+    throw std::logic_error("Unhandled solver kind");
 }
 
 void run_simulation(
     const fmmgalaxy::SimulationConfig& config,
     const fmmgalaxy::RunProvenance& provenance
 ) {
+    const SolverKind solver = classify_solver(config.solver);
+
     std::cout << fmmgalaxy::build_summary();
     std::cout << "Simulation: " << config.name << '\n';
     std::cout << "Solver:     " << config.solver << '\n';
-    if (uses_cuda_direct_solver(config.solver) ||
-        uses_cuda_tree_solver(config.solver) ||
-        uses_cuda_fmm_solver(config.solver)) {
+    if (is_cuda_solver(solver)) {
         std::cout << "CUDA available: "
                   << (fmmgalaxy::cuda_solver_available() ? "yes" : "no, using CPU fallback")
                   << '\n';
@@ -206,7 +236,7 @@ void run_simulation(
     fmmgalaxy::SnapshotWriter writer(config);
     writer.write_metadata(config, particles.size(), provenance);
 
-    compute_serial_accelerations(particles, config);
+    compute_serial_accelerations(particles, config, solver);
 
     auto write_outputs = [&](int step, double time) {
         writer.write_accelerations(step, time, particles);
@@ -223,25 +253,25 @@ void run_simulation(
 
     write_outputs(0, 0.0);
     for (int step = 1; step <= config.steps; ++step) {
-        if (uses_cuda_direct_solver(config.solver)) {
+        if (solver == SolverKind::CudaDirect) {
             fmmgalaxy::cuda_direct_leapfrog_step(particles, config.dt, config.physics);
-        } else if (uses_cuda_tree_solver(config.solver)) {
+        } else if (solver == SolverKind::CudaTree) {
             fmmgalaxy::cuda_tree_leapfrog_step(
                 particles,
                 config.dt,
                 config.physics,
-                cuda_tree_options_from_config(config)
+                cuda_options_from_config(config)
             );
-        } else if (uses_cuda_fmm_solver(config.solver)) {
+        } else if (solver == SolverKind::CudaFmm) {
             fmmgalaxy::cuda_fmm_leapfrog_step(
                 particles,
                 config.dt,
                 config.physics,
-                cuda_tree_options_from_config(config)
+                cuda_options_from_config(config)
             );
         } else {
-            auto compute_accelerations = [&config](std::vector<fmmgalaxy::Particle>& state) {
-                compute_serial_accelerations(state, config);
+            auto compute_accelerations = [&config, solver](std::vector<fmmgalaxy::Particle>& state) {
+                compute_serial_accelerations(state, config, solver);
             };
             fmmgalaxy::leapfrog_step(particles, config.dt, compute_accelerations);
         }
@@ -260,14 +290,14 @@ void run_distributed_simulation(
     const fmmgalaxy::MpiExecution& execution,
     const fmmgalaxy::RunProvenance& provenance
 ) {
+    const SolverKind solver = classify_solver(config.solver);
+
     if (execution.rank == 0) {
         std::cout << fmmgalaxy::build_summary();
         std::cout << "Simulation: " << config.name << '\n';
         std::cout << "Solver:     " << config.solver << '\n';
         std::cout << "MPI ranks:  " << execution.size << '\n';
-        if (uses_cuda_direct_solver(config.solver) ||
-            uses_cuda_tree_solver(config.solver) ||
-            uses_cuda_fmm_solver(config.solver)) {
+        if (is_cuda_solver(solver)) {
             std::cout << "CUDA available: "
                       << (fmmgalaxy::cuda_solver_available() ? "yes" : "no, using CPU fallback")
                       << '\n';
@@ -310,7 +340,7 @@ void run_distributed_simulation(
                   << " total_energy " << diagnostics.total_energy << '\n';
     };
 
-    compute_owned_accelerations(particles, config, owned);
+    compute_owned_accelerations(particles, config, owned, solver);
     fmmgalaxy::mpi_synchronize_particles(particles, owned);
     write_outputs(0, 0.0);
 
@@ -319,7 +349,7 @@ void run_distributed_simulation(
         fmmgalaxy::drift(particles, owned.begin, owned.end, config.dt);
         fmmgalaxy::mpi_synchronize_particles(particles, owned);
 
-        compute_owned_accelerations(particles, config, owned);
+        compute_owned_accelerations(particles, config, owned, solver);
 
         fmmgalaxy::kick(particles, owned.begin, owned.end, 0.5 * config.dt);
         fmmgalaxy::mpi_synchronize_particles(particles, owned);
