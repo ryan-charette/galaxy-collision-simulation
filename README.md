@@ -385,6 +385,18 @@ The Phase 3 environment starts as a contextual bandit and supports both
 supervised-model `cheap` mode and simulator-launching `real` mode. Details are
 in `docs/rl_environment.md`.
 
+Generate, train, and evaluate a learned acceleration-residual correction model:
+
+```bash
+python scripts/generate_residual_dataset.py --output experiments/ml_datasets/accel_residuals.csv
+python -m python.ml.train_accel_residual_model --data experiments/ml_datasets/accel_residuals.csv --output experiments/ml_models/accel_residual_model.pkl
+python -m python.ml.evaluate_accel_residual_model --model experiments/ml_models/accel_residual_model.pkl --data experiments/ml_datasets/accel_residuals.csv --heldout-from-model --stability-steps 5 --output experiments/ml_models/accel_residual_eval.md
+```
+
+This workflow predicts direct-minus-approximate acceleration residuals
+and reports whether corrected one-step forces improve on held-out solver
+configs. Details are in `docs/error_correction.md`.
+
 Generate solver crossover plots and tables from runtime and accuracy benchmark
 CSVs:
 
