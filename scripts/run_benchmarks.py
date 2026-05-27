@@ -5,14 +5,20 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import os
 import platform
 import statistics
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.experiment_utils import benchmark_env, write_two_galaxy_config
 
 
 @dataclass(frozen=True)
@@ -41,74 +47,6 @@ class BenchmarkCase:
         return (self.particles * self.steps) / self.seconds
 
 
-def write_config(
-    path: Path,
-    solver: str,
-    particles: int,
-    steps: int,
-    output: Path,
-    output_format: str,
-    theta: float,
-    leaf_capacity: int,
-    expansion_order: int,
-) -> None:
-    half = particles // 2
-    rest = particles - half
-    config = f"""[simulation]
-name = "benchmark_{solver}_{particles}"
-dim = 3
-solver = "{solver}"
-seed = 20260502
-n_particles = {particles}
-steps = {steps}
-dt = 0.01
-snapshot_every = {steps}
-tree_theta = {theta}
-tree_leaf_capacity = {leaf_capacity}
-fmm_expansion_order = {expansion_order}
-
-[physics]
-G = 1.0
-softening = 0.025
-
-[galaxy.primary]
-n_particles = {half}
-mass = 1.0
-radius = 0.85
-position = [-0.72, -0.10, 0.06]
-velocity = [0.34, 0.10, -0.015]
-orientation = 0.25
-group_id = 0
-thickness = 0.045
-inclination = 0.62
-
-[galaxy.secondary]
-n_particles = {rest}
-mass = 1.0
-radius = 0.85
-position = [0.72, 0.10, -0.06]
-velocity = [-0.34, -0.10, 0.015]
-orientation = 3.42
-group_id = 1
-thickness = 0.045
-inclination = -0.72
-
-[output]
-directory = "{output.as_posix()}"
-format = "{output_format}"
-"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(config, encoding="utf-8")
-
-
-def benchmark_env() -> dict[str, str]:
-    env = os.environ.copy()
-    msys_runtime = Path("C:/msys64/ucrt64/bin")
-    if msys_runtime.exists():
-        env["PATH"] = f"{msys_runtime}{os.pathsep}{env.get('PATH', '')}"
-    return env
-
-
 def run_case(
     executable: Path,
     solver: str,
@@ -123,16 +61,21 @@ def run_case(
 ) -> BenchmarkCase:
     config_path = work_dir / "configs" / f"{output_format}_{solver}_{particles}_r{replicate}.toml"
     output_dir = work_dir / "outputs" / output_format / f"{solver}_{particles}_r{replicate}"
-    write_config(
+    write_two_galaxy_config(
         config_path,
-        solver,
-        particles,
-        steps,
-        output_dir,
-        output_format,
-        theta,
-        leaf_capacity,
-        expansion_order,
+        name=f"benchmark_{solver}_{particles}",
+        solver=solver,
+        particles=particles,
+        steps=steps,
+        dt=0.01,
+        snapshot_every=steps,
+        output=output_dir,
+        output_format=output_format,
+        theta=theta,
+        leaf_capacity=leaf_capacity,
+        expansion_order=expansion_order,
+        softening=0.025,
+        seed=20260502,
     )
 
     command = [str(executable), "--config", str(config_path)]
@@ -222,7 +165,8 @@ def write_csv(path: Path, results: list[BenchmarkCase]) -> None:
 def summarize(results: list[BenchmarkCase]) -> list[tuple[str, str, int, int, float, float, float, str]]:
     grouped: dict[tuple[str, str, int, int], list[BenchmarkCase]] = {}
     for result in results:
-        grouped.setdefault((result.output_format, result.solver, result.particles, result.steps), []).append(result)
+        key = (result.output_format, result.solver, result.particles, result.steps)
+        grouped.setdefault(key, []).append(result)
 
     rows = []
     solver_order = {
@@ -278,10 +222,21 @@ def write_markdown(path: Path, results: list[BenchmarkCase]) -> None:
         "",
         "Build: Release executable. CUDA use depends on the selected solver and build configuration.",
         "",
-        "| Output | Solver | Particles | Steps | Median wall time (s) | Steps/s | Particle-steps/s | Commit |",
+        "| Output | Solver | Particles | Steps | Median wall time (s) | "
+        "Steps/s | Particle-steps/s | Commit |",
         "|---|---|---:|---:|---:|---:|---:|---|",
     ]
-    for output_format, solver, particles, steps, seconds, steps_per_second, particle_steps_per_second, git_commit in rows:
+    for row in rows:
+        (
+            output_format,
+            solver,
+            particles,
+            steps,
+            seconds,
+            steps_per_second,
+            particle_steps_per_second,
+            git_commit,
+        ) = row
         short_commit = git_commit[:12] if git_commit not in {"mixed", "unavailable"} else git_commit
         lines.append(
             f"| `{output_format}` | `{solver}` | {particles} | {steps} | {seconds:.3f} | "
@@ -289,3 +244,67 @@ def write_markdown(path: Path, results: list[BenchmarkCase]) -> None:
         )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--executable", type=Path, default=Path("build-readme-gif/fmm_galaxy_sim.exe"))
+    parser.add_argument("--work-dir", type=Path, default=Path("experiments/benchmarks/local_cpu"))
+    parser.add_argument("--csv", type=Path, default=Path("docs/benchmarks/local_cpu_benchmark.csv"))
+    parser.add_argument("--markdown", type=Path, default=Path("docs/benchmarks/local_cpu_benchmark.md"))
+    parser.add_argument("--solvers", nargs="+", default=["direct", "tree", "fmm"])
+    parser.add_argument("--particles", nargs="+", type=int, default=[250, 500, 1000])
+    parser.add_argument("--steps", type=int, default=20)
+    parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--output-format", choices=["csv", "parquet", "none"], default="csv")
+    parser.add_argument("--output-formats", nargs="+", choices=["csv", "parquet", "none"], default=None)
+    parser.add_argument("--theta", type=float, default=0.58)
+    parser.add_argument("--leaf-capacity", type=int, default=16)
+    parser.add_argument("--expansion-order", type=int, choices=[0, 2, 4], default=4)
+    parser.add_argument(
+        "--crossover-suite",
+        action="store_true",
+        help="Use a wider N sweep with csv and none output for solver crossover analysis.",
+    )
+    args = parser.parse_args()
+
+    if not args.executable.exists():
+        raise FileNotFoundError(f"Executable not found: {args.executable}")
+
+    if args.crossover_suite:
+        args.output_formats = ["none", "csv"]
+        args.particles = [128, 256, 512, 1024, 2048, 4096]
+        args.solvers = ["direct", "tree", "fmm"]
+
+    results: list[BenchmarkCase] = []
+    output_formats = args.output_formats if args.output_formats is not None else [args.output_format]
+    for output_format in output_formats:
+        for particles in args.particles:
+            for solver in args.solvers:
+                for replicate in range(1, args.repetitions + 1):
+                    result = run_case(
+                        args.executable,
+                        solver,
+                        particles,
+                        args.steps,
+                        replicate,
+                        args.work_dir,
+                        output_format,
+                        args.theta,
+                        args.leaf_capacity,
+                        args.expansion_order,
+                    )
+                    results.append(result)
+                    print(
+                        f"{output_format:>7} {solver:>6} n={particles:<5} run={replicate} "
+                        f"{result.seconds:.3f}s ({result.steps_per_second:.2f} steps/s)"
+                    )
+
+    write_csv(args.csv, results)
+    write_markdown(args.markdown, results)
+    print(f"Wrote {args.csv}")
+    print(f"Wrote {args.markdown}")
+
+
+if __name__ == "__main__":
+    main()
