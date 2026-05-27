@@ -20,9 +20,15 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from python.ml import DATASET_SCHEMA_VERSION
+from python.ml.features import estimate_tree_depth
 from python.ml.residuals import RESIDUAL_SCHEMA_VERSION
 from python.utils.snapshots import load_acceleration_dump
-from scripts import sweep as sweep_runner
+from scripts.experiment_utils import (
+    benchmark_env,
+    resolve_simulator_executable,
+    safe_float_label,
+    write_two_galaxy_config,
+)
 
 
 @dataclass(frozen=True)
@@ -46,7 +52,7 @@ class SimRun:
 
 
 def safe_label(value: float) -> str:
-    return f"{value:g}".replace("-", "m").replace(".", "p")
+    return safe_float_label(value)
 
 
 def case_id(case: ResidualCase) -> str:
@@ -54,64 +60,6 @@ def case_id(case: ResidualCase) -> str:
         f"{case.solver}_n{case.n_particles}_theta{safe_label(case.tree_theta)}_"
         f"leaf{case.tree_leaf_capacity}_p{case.fmm_expansion_order}_soft{safe_label(case.softening)}"
     )
-
-
-def write_config(
-    path: Path,
-    case: ResidualCase,
-    output_dir: Path,
-    solver: str,
-    steps: int,
-    dt: float,
-) -> None:
-    half = case.n_particles // 2
-    rest = case.n_particles - half
-    config = f"""[simulation]
-name = "residual_{solver}_{case.n_particles}"
-dim = 3
-solver = "{solver}"
-seed = 20260526
-n_particles = {case.n_particles}
-steps = {steps}
-dt = {dt}
-snapshot_every = 1
-tree_theta = {case.tree_theta}
-tree_leaf_capacity = {case.tree_leaf_capacity}
-fmm_expansion_order = {case.fmm_expansion_order}
-
-[physics]
-G = 1.0
-softening = {case.softening}
-
-[galaxy.primary]
-n_particles = {half}
-mass = 1.0
-radius = 0.85
-position = [-0.72, -0.10, 0.06]
-velocity = [0.34, 0.10, -0.015]
-orientation = 0.25
-group_id = 0
-thickness = 0.045
-inclination = 0.62
-
-[galaxy.secondary]
-n_particles = {rest}
-mass = 1.0
-radius = 0.85
-position = [0.72, 0.10, -0.06]
-velocity = [-0.34, -0.10, 0.015]
-orientation = 3.42
-group_id = 1
-thickness = 0.045
-inclination = -0.72
-
-[output]
-directory = "{output_dir.as_posix()}"
-format = "none"
-acceleration_dump = true
-"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(config, encoding="utf-8")
 
 
 def run_simulation(
@@ -133,7 +81,7 @@ def run_simulation(
     completed = subprocess.run(
         command,
         cwd=REPO_ROOT,
-        env=sweep_runner.benchmark_env(),
+        env=benchmark_env(),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -148,12 +96,6 @@ def run_simulation(
     metadata_path = output_dir / "metadata.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
     return SimRun(output_dir.name, config_path, output_dir, acceleration_path, metadata, seconds)
-
-
-def estimate_tree_depth(n_particles: int, leaf_capacity: int) -> int:
-    if n_particles <= leaf_capacity:
-        return 1
-    return max(1, int(math.ceil(math.log(max(n_particles / max(leaf_capacity, 1), 1.0), 8.0))) + 1)
 
 
 def particle_context_features(
@@ -323,7 +265,7 @@ def build_cases(args: argparse.Namespace) -> list[ResidualCase]:
 
 
 def generate(args: argparse.Namespace) -> None:
-    executable = sweep_runner.resolve_executable(str(args.executable) if args.executable else None)
+    executable = resolve_simulator_executable(args.executable)
     cases = build_cases(args)
     direct_runs: dict[tuple[int, float], SimRun] = {}
     rows: list[dict[str, Any]] = []
@@ -343,7 +285,23 @@ def generate(args: argparse.Namespace) -> None:
             direct_id = f"direct_reference_n{case.n_particles}_soft{safe_label(case.softening)}"
             direct_output = args.run_root / "runs" / direct_id
             direct_config = args.run_root / "configs" / f"{direct_id}.toml"
-            write_config(direct_config, direct_case, direct_output, "direct", args.steps, args.dt)
+            write_two_galaxy_config(
+                direct_config,
+                name=f"residual_direct_{case.n_particles}",
+                solver="direct",
+                particles=direct_case.n_particles,
+                steps=args.steps,
+                dt=args.dt,
+                snapshot_every=1,
+                output=direct_output,
+                output_format="none",
+                theta=direct_case.tree_theta,
+                leaf_capacity=direct_case.tree_leaf_capacity,
+                expansion_order=direct_case.fmm_expansion_order,
+                softening=direct_case.softening,
+                seed=20260526,
+                acceleration_dump=True,
+            )
             direct_runs[direct_key] = run_simulation(
                 executable,
                 direct_config,
@@ -355,7 +313,23 @@ def generate(args: argparse.Namespace) -> None:
         label = case_id(case)
         output_dir = args.run_root / "runs" / label
         config_path = args.run_root / "configs" / f"{label}.toml"
-        write_config(config_path, case, output_dir, case.solver, args.steps, args.dt)
+        write_two_galaxy_config(
+            config_path,
+            name=f"residual_{case.solver}_{case.n_particles}",
+            solver=case.solver,
+            particles=case.n_particles,
+            steps=args.steps,
+            dt=args.dt,
+            snapshot_every=1,
+            output=output_dir,
+            output_format="none",
+            theta=case.tree_theta,
+            leaf_capacity=case.tree_leaf_capacity,
+            expansion_order=case.fmm_expansion_order,
+            softening=case.softening,
+            seed=20260526,
+            acceleration_dump=True,
+        )
         approx_run = run_simulation(
             executable,
             config_path,
