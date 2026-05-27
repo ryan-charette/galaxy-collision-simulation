@@ -10,6 +10,19 @@
 
 namespace fmmgalaxy {
 
+namespace {
+
+FmmOptions fmm_options_from_cuda_options(CudaTreeOptions options) {
+    FmmOptions fmm_options;
+    fmm_options.theta = options.theta;
+    fmm_options.leaf_capacity = options.leaf_capacity;
+    fmm_options.max_depth = options.max_depth;
+    fmm_options.expansion_order = options.expansion_order;
+    return fmm_options;
+}
+
+}  // namespace
+
 bool cuda_solver_available() {
     return false;
 }
@@ -48,12 +61,7 @@ void compute_cuda_fmm_accelerations(
     const PhysicsParams& params,
     CudaTreeOptions options
 ) {
-    FmmOptions fmm_options;
-    fmm_options.theta = options.theta;
-    fmm_options.leaf_capacity = options.leaf_capacity;
-    fmm_options.max_depth = options.max_depth;
-    fmm_options.expansion_order = options.expansion_order;
-    compute_fmm_accelerations(particles, params, fmm_options);
+    compute_fmm_accelerations(particles, params, fmm_options_from_cuda_options(options));
 }
 
 void cuda_tree_leapfrog_step(
