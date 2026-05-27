@@ -21,6 +21,7 @@ public:
         const RunProvenance& provenance
     );
     void write_snapshot(int step, double time, const std::vector<Particle>& particles);
+    void write_accelerations(int step, double time, const std::vector<Particle>& particles);
     void write_diagnostics(int step, double time, const Diagnostics& diagnostics, std::size_t particle_count);
 
 private:
@@ -28,6 +29,7 @@ private:
     std::ofstream diagnostics_stream_;
     OutputFormat format_{OutputFormat::Csv};
     bool enabled_{true};
+    bool acceleration_dump_{false};
 };
 
 }  // namespace fmmgalaxy
