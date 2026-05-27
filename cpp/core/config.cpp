@@ -74,6 +74,17 @@ std::string lowercase(std::string value) {
     return value;
 }
 
+bool parse_bool(std::string value) {
+    value = lowercase(unquote(std::move(value)));
+    if (value == "true" || value == "1" || value == "yes" || value == "on") {
+        return true;
+    }
+    if (value == "false" || value == "0" || value == "no" || value == "off") {
+        return false;
+    }
+    throw std::runtime_error("Expected boolean value, got: " + value);
+}
+
 void set_simulation_value(SimulationConfig& config, const std::string& key, const std::string& value) {
     if (key == "name") {
         config.name = unquote(value);
@@ -113,6 +124,8 @@ void set_output_value(SimulationConfig& config, const std::string& key, const st
         config.output.directory = unquote(value);
     } else if (key == "format") {
         config.output.format = parse_output_format(unquote(value));
+    } else if (key == "acceleration_dump" || key == "dump_accelerations") {
+        config.output.acceleration_dump = parse_bool(value);
     } else if (key == "snapshot_every") {
         config.snapshot_every = std::stoi(value);
     }
