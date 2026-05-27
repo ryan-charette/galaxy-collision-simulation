@@ -1,7 +1,7 @@
 # Supervised Solver Models
 
-Phase 2 trains supervised baselines from the Phase 1 ML datasets. Model
-artifacts are Python pickle bundles with:
+Supervised solver modeling trains baseline regressors from the generated ML
+datasets. Model artifacts are Python pickle bundles with:
 
 - `dataset_schema_version`
 - model kind and model type
