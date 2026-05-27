@@ -35,6 +35,12 @@ std::string snapshot_filename(int step, OutputFormat format) {
     return snapshot_stem(step) + (format == OutputFormat::Parquet ? ".parquet" : ".csv");
 }
 
+std::string acceleration_filename(int step) {
+    std::ostringstream name;
+    name << "accelerations_" << std::setw(6) << std::setfill('0') << step << ".csv";
+    return name.str();
+}
+
 std::string quote_command_arg(const std::string& value) {
     std::string quoted = "\"";
     for (const char ch : value) {
@@ -55,6 +61,36 @@ void write_csv_snapshot_file(
     std::ofstream output(path, std::ios::trunc);
     if (!output) {
         throw std::runtime_error("Could not write snapshot output: " + path.string());
+    }
+
+    output << std::setprecision(17);
+    output << "# time=" << time << "\n";
+    output << "id,group_id,mass,x,y,z,vx,vy,vz,ax,ay,az\n";
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        const auto& particle = particles[i];
+        output << i << ','
+               << particle.group_id << ','
+               << particle.mass << ','
+               << particle.position.x << ','
+               << particle.position.y << ','
+               << particle.position.z << ','
+               << particle.velocity.x << ','
+               << particle.velocity.y << ','
+               << particle.velocity.z << ','
+               << particle.acceleration.x << ','
+               << particle.acceleration.y << ','
+               << particle.acceleration.z << '\n';
+    }
+}
+
+void write_csv_acceleration_file(
+    const std::filesystem::path& path,
+    double time,
+    const std::vector<Particle>& particles
+) {
+    std::ofstream output(path, std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error("Could not write acceleration output: " + path.string());
     }
 
     output << std::setprecision(17);
@@ -111,6 +147,7 @@ bool run_parquet_converter(
 SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(config.output.directory) {
     format_ = config.output.format;
     enabled_ = format_ != OutputFormat::None;
+    acceleration_dump_ = config.output.acceleration_dump;
     std::filesystem::create_directories(directory_);
     if (!enabled_) {
         return;
@@ -146,6 +183,7 @@ void SnapshotWriter::write_metadata(
     metadata << "  \"dt\": " << config.dt << ",\n";
     metadata << "  \"snapshot_every\": " << config.snapshot_every << ",\n";
     metadata << "  \"output_format\": \"" << output_format_name(config.output.format) << "\",\n";
+    metadata << "  \"acceleration_dump\": " << json_bool(config.output.acceleration_dump) << ",\n";
     metadata << "  \"dim\": " << config.dim << ",\n";
     metadata << "  \"gravitational_constant\": " << config.physics.gravitational_constant << ",\n";
     metadata << "  \"softening\": " << config.physics.softening << ",\n";
@@ -172,41 +210,3 @@ void SnapshotWriter::write_metadata(
     metadata << "  \"config_sha256\": \"" << escaped_json(provenance.config_sha256) << "\"\n";
     metadata << "}\n";
 }
-
-void SnapshotWriter::write_snapshot(int step, double time, const std::vector<Particle>& particles) {
-    if (!enabled_) {
-        return;
-    }
-
-    const auto output_path = directory_ / snapshot_filename(step, format_);
-    if (format_ == OutputFormat::Csv) {
-        write_csv_snapshot_file(output_path, time, particles);
-        return;
-    }
-
-    if (format_ == OutputFormat::Parquet) {
-        const auto temp_csv_path = directory_ / (snapshot_stem(step) + ".parquet.tmp.csv");
-        write_csv_snapshot_file(temp_csv_path, time, particles);
-        const bool converted = run_parquet_converter(temp_csv_path, output_path, step, time);
-        std::filesystem::remove(temp_csv_path);
-        if (!converted) {
-            throw std::runtime_error(
-                "Could not convert snapshot to Parquet. Install pyarrow and ensure python is on PATH, "
-                "or set FMM_GALAXY_PYTHON to the Python executable."
-            );
-        }
-        return;
-    }
-
-    throw std::runtime_error("Unknown snapshot output format");
-}
-
-void SnapshotWriter::write_diagnostics(
-    int step,
-    double time,
-    const Diagnostics& diagnostics,
-    std::size_t particle_count
-) {
-    if (!enabled_) {
-        return;
-    }
