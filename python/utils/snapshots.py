@@ -37,9 +37,13 @@ def _read_time(path: Path) -> float:
 
 
 def _step_from_name(path: Path) -> int:
+    return _step_from_prefixed_name(path, "snapshot_")
+
+
+def _step_from_prefixed_name(path: Path, prefix: str) -> int:
     stem = path.stem
-    if stem.startswith("snapshot_"):
-        step_text = stem.split("_", 1)[1]
+    if stem.startswith(prefix):
+        step_text = stem.removeprefix(prefix)
         if step_text.isdigit():
             return int(step_text)
     raise ValueError(f"Invalid snapshot filename: {path.name}")
@@ -129,6 +133,50 @@ def load_snapshot(path: str | Path) -> Snapshot:
         }
     )
     return _snapshot_from_frame(path, frame, _read_time(path))
+
+
+def load_acceleration_dump(path: str | Path) -> Snapshot:
+    """Load an acceleration_*.csv dump written by the simulator."""
+    path = Path(path)
+    if path.suffix != ".csv":
+        raise ValueError(f"Acceleration dumps are CSV files, got: {path}")
+    with path.open("r", encoding="utf-8") as handle:
+        skip_header = 1 if handle.readline().startswith("# time=") else 0
+    data = np.genfromtxt(path, delimiter=",", names=True, skip_header=skip_header)
+    if data.shape == ():
+        data = np.array([data], dtype=data.dtype)
+
+    names = data.dtype.names or ()
+    z = data["z"] if "z" in names else np.zeros_like(data["x"])
+    vz = data["vz"] if "vz" in names else np.zeros_like(data["vx"])
+    az = data["az"] if "az" in names else np.zeros_like(data["ax"])
+    frame = pd.DataFrame(
+        {
+            "id": data["id"],
+            "group_id": data["group_id"],
+            "mass": data["mass"],
+            "x": data["x"],
+            "y": data["y"],
+            "z": z,
+            "vx": data["vx"],
+            "vy": data["vy"],
+            "vz": vz,
+            "ax": data["ax"],
+            "ay": data["ay"],
+            "az": az,
+        }
+    )
+    return Snapshot(
+        step=_step_from_prefixed_name(path, "accelerations_"),
+        time=_read_time(path),
+        ids=np.asarray(frame["id"], dtype=np.int64),
+        positions=np.column_stack([frame["x"], frame["y"], frame["z"]]),
+        velocities=np.column_stack([frame["vx"], frame["vy"], frame["vz"]]),
+        accelerations=np.column_stack([frame["ax"], frame["ay"], frame["az"]]),
+        masses=np.asarray(frame["mass"], dtype=float),
+        group_id=np.asarray(frame["group_id"], dtype=np.int64),
+        path=path,
+    )
 
 
 def load_latest_snapshot(directory: str | Path) -> Snapshot:
