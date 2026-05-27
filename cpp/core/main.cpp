@@ -209,6 +209,7 @@ void run_simulation(
     compute_serial_accelerations(particles, config);
 
     auto write_outputs = [&](int step, double time) {
+        writer.write_accelerations(step, time, particles);
         if (config.output.format == fmmgalaxy::OutputFormat::None) {
             std::cout << "step " << step << " time " << time << " output disabled\n";
             return;
@@ -297,6 +298,7 @@ void run_distributed_simulation(
         if (execution.rank != 0) {
             return;
         }
+        writer->write_accelerations(step, time, particles);
         if (config.output.format == fmmgalaxy::OutputFormat::None) {
             std::cout << "step " << step << " time " << time << " output disabled\n";
             return;
