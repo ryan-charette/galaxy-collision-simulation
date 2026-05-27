@@ -89,7 +89,7 @@ python scripts/generate_ml_dataset.py --sweep configs/sweeps/ml_solver_dataset.y
 Use a `.parquet` output path for the production artifact when `pandas` and
 `pyarrow` are installed.
 
-To validate all Phase 1 ML dataset types, run a slightly larger smoke subset so
+To validate all ML dataset types, run a slightly larger smoke subset so
 the force-error table has both direct and approximate solver rows:
 
 ```bash
