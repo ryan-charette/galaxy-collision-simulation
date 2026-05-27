@@ -23,6 +23,7 @@ std::string output_format_name(OutputFormat format);
 struct OutputConfig {
     std::filesystem::path directory{"experiments/validation/smoke_test"};
     OutputFormat format{OutputFormat::Csv};
+    bool acceleration_dump{false};
 };
 
 struct SimulationConfig {
