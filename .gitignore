@@ -35,21 +35,32 @@ snapshot_*.csv
 snapshot_*.parquet
 diagnostics.csv
 metadata.json
+accelerations_*.csv
 experiments/**/outputs/
 experiments/accuracy/
 experiments/accuracy_*/
 experiments/benchmarks/
 experiments/crossover/
 experiments/crossover_*/
+experiments/error_correction/
+experiments/ml_datasets/
+experiments/ml_models/
+experiments/ml_policies/
+experiments/ml_sweeps/
+experiments/rl_env*/
 experiments/sweeps/
 experiments/**/snapshots/
 experiments/**/snapshot_*.csv
 experiments/**/snapshot_*.parquet
 experiments/**/diagnostics.csv
 experiments/**/metadata.json
+experiments/**/accelerations_*.csv
 test_output/
 test_config.toml
 tmp*/
+
+# Reference checkouts and local comparison material
+external/
 
 # Editor
 .vscode/
