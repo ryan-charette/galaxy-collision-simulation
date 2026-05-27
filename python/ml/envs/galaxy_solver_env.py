@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from python.ml.datasets import load_model_bundle
+from python.ml.features import estimate_tree_depth
 from python.ml.recommend_config import add_force_predictions, direct_runtime_estimate, predict_cost
 from scripts import sweep as sweep_runner
 
@@ -107,12 +108,6 @@ def default_actions(hardware: str = "cpu") -> list[SolverAction]:
                 for expansion_order in expansion_orders:
                     actions.append(SolverAction(solver, theta, leaf_capacity, expansion_order))
     return actions
-
-
-def estimate_tree_depth(n_particles: int, leaf_capacity: int) -> int:
-    if n_particles <= leaf_capacity:
-        return 1
-    return max(1, int(math.ceil(math.log(max(n_particles / max(leaf_capacity, 1), 1.0), 8.0))) + 1)
 
 
 def observation_from_context(context: dict[str, Any]) -> np.ndarray:
