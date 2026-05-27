@@ -4,18 +4,13 @@ channels:
 dependencies:
   - python>=3.10
   - numpy
-  - scipy
   - matplotlib
-  - h5py
   - pandas
   - pyarrow
   - scikit-learn
   - gymnasium
   - pytest
-  - tqdm
-  - moviepy
-  - imageio
-  - imageio-ffmpeg
   - pyyaml
+  - tomli
   - cmake
   - ninja
