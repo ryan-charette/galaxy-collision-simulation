@@ -105,6 +105,23 @@ python -m python.ml.evaluate_models --model experiments/ml_models/smoke_solver_c
 python -m python.ml.recommend_config --n-particles 100000 --target-force-rmse 1e-3 --hardware cpu --cost-model experiments/ml_models/smoke_solver_cost_model.pkl --force-model experiments/ml_models/smoke_force_error_model.pkl
 ```
 
+The adaptive solver-tuning environment and contextual-bandit policy can be
+smoke-tested in cheap mode without launching new simulations:
+
+```bash
+python -m python.ml.rl.train_policy --episodes 30 --n-particles 256 512 --cost-model experiments/ml_models/smoke_solver_cost_model.pkl --force-model experiments/ml_models/smoke_force_error_model.pkl --output experiments/ml_policies/smoke_bandit_policy.pkl
+python -m python.ml.rl.evaluate_policy --policy experiments/ml_policies/smoke_bandit_policy.pkl --n-particles 256 512 --cost-model experiments/ml_models/smoke_solver_cost_model.pkl --force-model experiments/ml_models/smoke_force_error_model.pkl --output experiments/ml_policies/smoke_bandit_eval.md
+```
+
+Learned acceleration-residual correction can be smoke-tested with direct and
+approximate step-0 acceleration dumps:
+
+```bash
+python scripts/generate_residual_dataset.py --smoke --output experiments/ml_datasets/smoke_accel_residuals.csv
+python -m python.ml.train_accel_residual_model --data experiments/ml_datasets/smoke_accel_residuals.csv --output experiments/ml_models/smoke_accel_residual_model.pkl
+python -m python.ml.evaluate_accel_residual_model --model experiments/ml_models/smoke_accel_residual_model.pkl --data experiments/ml_datasets/smoke_accel_residuals.csv --heldout-from-model --stability-steps 3 --output experiments/ml_models/smoke_accel_residual_eval.md
+```
+
 Solver crossover summaries can be regenerated from benchmark artifacts:
 
 ```bash
