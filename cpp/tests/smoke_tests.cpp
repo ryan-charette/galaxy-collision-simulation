@@ -203,7 +203,7 @@ int main() {
                 << "[galaxy.primary]\nn_particles=4\nmass=1.0\nradius=1.0\n"
                 << "position=[0.0,0.0,0.1]\nvelocity=[0.0,0.0,0.0]\norientation=0.0\ngroup_id=3\n"
                 << "thickness=0.05\ninclination=0.2\n"
-                << "[output]\ndirectory=\"test_output\"\nformat=\"csv\"\n";
+                << "[output]\ndirectory=\"test_output\"\nformat=\"csv\"\nacceleration_dump=true\n";
     config_file.close();
 
     const std::filesystem::path test_config_path = "test_config.toml";
@@ -214,6 +214,7 @@ int main() {
     failures += !require(loaded.galaxies[0].group_id == 3, "config parser reads group id");
     failures += !require(near(loaded.galaxies[0].position.z, 0.1, 1.0e-12), "config parser reads z position");
     failures += !require(loaded.output.format == fmmgalaxy::OutputFormat::Csv, "config parser reads csv output format");
+    failures += !require(loaded.output.acceleration_dump, "config parser reads acceleration dump flag");
     failures += !require(
         fmmgalaxy::parse_output_format("parquet") == fmmgalaxy::OutputFormat::Parquet,
         "config parser accepts parquet output format"
@@ -225,10 +226,33 @@ int main() {
     failures += !require(provenance.config_sha256.size() == 64, "provenance hashes config file");
     writer.write_metadata(loaded, generated.size(), provenance);
     writer.write_snapshot(0, 0.0, generated);
+    writer.write_accelerations(0, 0.0, generated);
     writer.write_diagnostics(0, 0.0, diagnostics, generated.size());
     failures += !require(std::filesystem::exists("test_output/snapshot_000000.csv"), "snapshot writer creates csv");
+    failures += !require(
+        std::filesystem::exists("test_output/accelerations_000000.csv"),
+        "snapshot writer creates acceleration dump"
+    );
     failures += !require(std::filesystem::exists("test_output/diagnostics.csv"), "snapshot writer creates diagnostics");
     std::ifstream metadata_file("test_output/metadata.json");
     const std::string metadata_json(
         (std::istreambuf_iterator<char>(metadata_file)),
         std::istreambuf_iterator<char>()
+    );
+    failures += !require(
+        metadata_json.find("\"git_commit\"") != std::string::npos,
+        "metadata includes git commit"
+    );
+    failures += !require(
+        metadata_json.find("\"config_sha256\"") != std::string::npos,
+        "metadata includes config hash"
+    );
+
+    if (failures != 0) {
+        std::cerr << failures << " smoke test checks failed\n";
+        return 1;
+    }
+
+    std::cout << "smoke_tests passed\n";
+    return 0;
+}
