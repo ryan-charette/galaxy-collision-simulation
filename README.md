@@ -1,6 +1,6 @@
 # Distributed Fast Multipole Galaxy Collision Simulator
 
-A compact 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV snapshot output, diagnostics, and Python plotting/animation tools.
+A compact 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV/Parquet snapshot output, diagnostics, and Python plotting/animation tools.
 
 ## Features
 
@@ -12,7 +12,7 @@ A compact 3D gravitational N-body simulator for galaxy collision experiments. Th
 - Optional CUDA direct/P2P force kernels, plus GPU evaluation paths for CPU-built tree and FMM interaction data
 - Kick-drift-kick leapfrog integrator
 - Reproducible disk-galaxy initial conditions from TOML-like configs
-- CSV snapshots plus metadata and energy/momentum diagnostics
+- CSV or Apache Parquet snapshots plus metadata and energy/momentum diagnostics
 - Python snapshot loader, static plotting, and MP4/GIF animation scripts
 - CTest smoke tests covering vectors, forces, integration, FMM accuracy, CUDA fallback, MPI ownership, config parsing, diagnostics, and snapshot writing
 
@@ -157,19 +157,20 @@ See `docs/benchmarks/README.md` for the benchmark index and `experiments/benchma
 ## Repository Layout
 
 ```text
-cpp/core/       core particles, config, integrator, diagnostics, CLI
+cpp/core/       config, provenance, integrator, diagnostics, CLI, simulation runner
 cpp/direct/     direct softened-gravity solver
-cpp/fmm/        Barnes-Hut treecode and p=4 FMM solver
+cpp/fmm/        shared tree geometry, Barnes-Hut treecode, and FMM solver
 cpp/mpi/        rank ownership and particle synchronization helpers
 cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
-cpp/io/         CSV snapshot and diagnostics writer
+cpp/io/         CSV/Parquet snapshot, diagnostics, JSON, and conversion helpers
 cpp/tests/      C++ smoke/unit tests
 python/utils/   snapshot and diagnostics loaders
-python/analysis/static plots
-python/animation/MP4/GIF rendering
+python/analysis/ static plots and solver-crossover reports
+python/ml/      dataset utilities, supervised models, and RL environment helpers
+python/animation/ MP4/GIF rendering
 configs/        simulation configs
 experiments/    output destinations and experiment notes
-docs/           design, architecture, roadmap, testing plan
+docs/           design, architecture, milestones, testing plan
 scripts/        build and smoke-test helpers
 ```
 
@@ -206,6 +207,24 @@ experiments/validation/smoke_test/
   snapshot_000010.csv
   ...
 ```
+
+`metadata.json` records reproducibility context for every run, including the git
+commit and branch, dirty working-tree state, build type, compiler, requested
+CMake MPI/CUDA options, CUDA availability and device name, MPI rank count,
+hostname, UTC timestamp, config path, and config SHA-256 hash. This file is
+written even when `[output] format = "none"` disables snapshots and diagnostics.
+
+For larger analysis or ML-oriented datasets, switch the snapshot format to Parquet:
+
+```toml
+[output]
+directory = "experiments/example"
+format = "parquet" # csv, parquet, none
+snapshot_every = 10
+```
+
+Parquet conversion uses the Python tooling and requires `pyarrow`. If the simulator
+should use a specific interpreter, set `FMM_GALAXY_PYTHON` before running it.
 
 Choose a solver in the config:
 
@@ -291,3 +310,106 @@ python -m python.analysis.plot_snapshots --input experiments/validation/readme_1
 python scripts/run_benchmarks.py --executable build-readme-gif/fmm_galaxy_sim.exe --particles 250 500 1000 --steps 20 --repetitions 3
 python scripts/run_benchmarks.py --executable build/fmm_galaxy_sim --solvers cuda-tree cuda-fmm --particles 10000 50000 100000 --steps 10 --repetitions 3 --output-format none --expansion-order 0
 ```
+
+Compare output formats on the same benchmark cases:
+
+```bash
+python scripts/run_benchmarks.py --executable build/fmm_galaxy_sim --solvers direct --particles 10000 --steps 10 --output-formats csv parquet
+```
+
+Generate the standard direct-reference force-error suite:
+
+```bash
+python scripts/run_force_error_benchmarks.py --executable build/fmm_galaxy_sim
+```
+
+For CI-scale validation, use the smoke profile:
+
+```bash
+python scripts/run_force_error_benchmarks.py --executable build/fmm_galaxy_sim --smoke
+```
+
+The suite writes `experiments/accuracy/force_error_summary.csv`,
+`force_error_summary.md`, `force_error_vs_n.png`, `force_error_vs_theta.png`,
+`energy_drift.png`, and `momentum_drift.png`. It compares step-0 accelerations
+against direct summation and reports drift from each solver's diagnostics over a
+short integration window.
+
+Launch a generic YAML-defined parameter sweep:
+
+```bash
+python scripts/sweep.py --grid configs/sweeps/theta_leaf_order.yaml
+```
+
+The sweep runner generates per-run TOML configs, raw logs, simulator output
+directories, `sweep_summary.csv`, optional `sweep_summary.parquet`, and
+`sweep_metadata.json`. Use `--dry-run` to only materialize planned configs,
+`--resume` to skip completed runs with metadata, and `--jobs N` for local
+parallel execution.
+
+Generate an ML-ready solver-tuning dataset from a sweep:
+
+```bash
+python scripts/generate_ml_dataset.py \
+  --sweep configs/sweeps/ml_solver_dataset.yaml \
+  --output experiments/ml_datasets/solver_tuning.parquet
+```
+
+The dataset generator writes one row per run with solver settings, provenance,
+hardware/build metadata, wall-clock timing, particle-steps/s, and energy/momentum
+drift fields. Use `--limit N` for a smoke subset and `--resume` to reuse completed
+run directories.
+
+Pass `--dataset-type force_error`, `--dataset-type per_step_diagnostics`, or
+`--dataset-type all` to materialize the other ML dataset types from the same
+sweep outputs. Stable schemas are documented in `docs/ml_datasets.md`.
+
+Train baseline supervised solver models from the ML datasets:
+
+```bash
+python -m python.ml.train_solver_cost_model --data experiments/ml_datasets/solver_tuning.parquet --output experiments/ml_models/solver_cost_model.pkl
+python -m python.ml.train_force_error_model --data experiments/ml_datasets/force_error.parquet --output experiments/ml_models/force_error_model.pkl
+python -m python.ml.recommend_config --n-particles 100000 --target-force-rmse 1e-3 --hardware cpu
+```
+
+Model training and recommendation workflows are documented in
+`docs/ml_models.md`.
+
+Train and evaluate the first adaptive solver-tuning policy:
+
+```bash
+python -m python.ml.rl.train_policy --episodes 200 --cost-model experiments/ml_models/solver_cost_model.pkl --force-model experiments/ml_models/force_error_model.pkl --output experiments/ml_policies/solver_bandit_policy.pkl
+python -m python.ml.rl.evaluate_policy --policy experiments/ml_policies/solver_bandit_policy.pkl --cost-model experiments/ml_models/solver_cost_model.pkl --force-model experiments/ml_models/force_error_model.pkl --output experiments/ml_policies/solver_bandit_eval.md
+```
+
+The adaptive solver-tuning environment starts as a contextual bandit and
+supports both supervised-model `cheap` mode and simulator-launching `real` mode.
+Details are in `docs/rl_environment.md`.
+
+Generate, train, and evaluate a learned acceleration-residual correction model:
+
+```bash
+python scripts/generate_residual_dataset.py --output experiments/ml_datasets/accel_residuals.csv
+python -m python.ml.train_accel_residual_model --data experiments/ml_datasets/accel_residuals.csv --output experiments/ml_models/accel_residual_model.pkl
+python -m python.ml.evaluate_accel_residual_model --model experiments/ml_models/accel_residual_model.pkl --data experiments/ml_datasets/accel_residuals.csv --heldout-from-model --stability-steps 5 --output experiments/ml_models/accel_residual_eval.md
+```
+
+This workflow predicts direct-minus-approximate acceleration residuals and
+reports whether corrected one-step forces improve on held-out solver configs.
+Details are in `docs/error_correction.md`.
+
+Generate solver crossover plots and tables from runtime and accuracy benchmark
+CSVs:
+
+```bash
+python -m python.analysis.solver_crossover \
+  --runtime-csv docs/benchmarks/local_cpu_benchmark.csv \
+  --accuracy-csv experiments/accuracy/force_error_summary.csv
+```
+
+For fresh runtime inputs, `scripts/run_benchmarks.py --crossover-suite` runs a
+wider particle-count sweep with both snapshot output disabled and CSV output
+enabled. The crossover analysis writes `runtime_vs_n.png`,
+`particle_steps_vs_n.png`, `force_error_vs_runtime.png`,
+`best_solver_by_n.csv`, `target_accuracy_summary.csv`, and
+`solver_crossover_summary.md`.

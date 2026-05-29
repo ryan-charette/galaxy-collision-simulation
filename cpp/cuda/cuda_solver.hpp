@@ -4,6 +4,7 @@
 #include "core/simulation_params.hpp"
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace fmmgalaxy {
@@ -16,6 +17,7 @@ struct CudaTreeOptions {
 };
 
 bool cuda_solver_available();
+std::string cuda_device_name();
 void compute_cuda_direct_accelerations(std::vector<Particle>& particles, const PhysicsParams& params);
 void cuda_direct_leapfrog_step(std::vector<Particle>& particles, double dt, const PhysicsParams& params);
 void compute_cuda_tree_accelerations(

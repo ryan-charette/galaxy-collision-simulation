@@ -1,47 +1,30 @@
-# Technical Design: Distributed FMM Galaxy Collision Simulator
+# Technical Design
 
-## 1. Objective
+This project is a 3D softened-gravity N-body simulator for galaxy collision
+experiments. The C++ engine provides direct, Barnes-Hut tree, FMM, MPI, and
+optional CUDA execution paths. Python tooling covers reproducible experiment
+runs, benchmark sweeps, snapshot loading, plotting, animation, ML-ready dataset
+generation, and baseline solver-selection models.
 
-This project will implement a high-performance gravitational N-body simulator for galaxy collision experiments. The implementation will progress from a direct-sum baseline to a single-node FMM solver, then to distributed MPI execution and selective CUDA acceleration.
+The design favors reproducibility and comparison across solvers. Direct
+summation remains the correctness baseline. Approximate and accelerated solvers
+must be evaluated against force error, conservation diagnostics, wall time, and
+hardware provenance.
 
-The project is designed around four goals:
-
-1. correctness against direct-sum baselines,
-2. scalable long-range force evaluation,
-3. reproducible galaxy collision experiments,
-4. high-quality Python visualization and benchmarking.
-
-## 2. Simulation model
-
-### 2.1 Particle state
+## Particle Model
 
 Each particle stores:
 
-- position `x`, `y`, optionally `z` later,
-- velocity `vx`, `vy`, optionally `vz` later,
-- acceleration `ax`, `ay`, optionally `az` later,
-- mass `m`,
-- group ID, e.g. source galaxy ID,
-- optional rendering attributes.
+- 3D position, velocity, and acceleration,
+- mass,
+- integer group ID for source galaxy membership.
 
-The current simulator stores 3D position, velocity, and acceleration. Planar 2D experiments remain available as the special case where `z = 0`.
+The simulator uses nondimensional code units by default. Planar experiments are
+represented by keeping the `z` components at zero.
 
-### 2.2 Units
+## Force Law
 
-Use nondimensional code units initially:
-
-- `G = 1`,
-- characteristic length `R = 1`,
-- characteristic mass `M = 1`,
-- characteristic time derived from the chosen velocity scale.
-
-A later galaxy-facing config layer can map these to physical units such as kpc and Myr.
-
-### 2.3 Softened gravity
-
-Use Plummer-style softening to avoid numerical instability during close encounters.
-
-For particles `i` and `j`:
+All solvers compute the same softened Newtonian acceleration:
 
 ```text
 r_ij = x_j - x_i
@@ -49,13 +32,12 @@ s2   = dot(r_ij, r_ij) + eps^2
 a_i += G * m_j * r_ij / s2^(3/2)
 ```
 
-Softening parameter `eps` is configurable per run.
+The gravitational constant `G` and Plummer-style softening length `eps` are
+configured per run.
 
-### 2.4 Time integration
+## Integration
 
-Use leapfrog integration as the initial default because it is simple and symplectic.
-
-Kick-drift-kick form:
+The simulator uses kick-drift-kick leapfrog integration:
 
 ```text
 v_{n+1/2} = v_n       + 0.5 * dt * a(x_n)
@@ -64,238 +46,138 @@ a_{n+1}   = a(x_{n+1})
 v_{n+1}   = v_{n+1/2} + 0.5 * dt * a_{n+1}
 ```
 
-Future extension:
+Direct, tree, FMM, and CUDA solver variants all plug into this integrator by
+providing updated particle accelerations.
 
-- adaptive timestep during close encounters,
-- block timestepping,
-- higher-order symplectic schemes.
+## Solvers
 
-## 3. Solver roadmap
+### Direct
 
-### 3.1 Direct-sum baseline
+The direct solver computes every pairwise interaction in `O(N^2)` time. It is
+used for small runs, regression tests, force-error benchmarks, and training data
+where exact accelerations are needed.
 
-The direct solver computes all pairwise interactions in `O(N^2)` time. This is required for:
+### Barnes-Hut Tree
 
-- correctness validation,
-- force-error measurement,
-- small-system debugging,
-- benchmark comparison.
+The tree solver builds a 3D octree and evaluates each target particle by walking
+the tree. Far cells are accepted when the cell-size-to-distance ratio satisfies
+the configured `tree_theta` criterion; nearby leaves fall back to direct P2P
+interactions.
 
-### 3.2 Tree infrastructure
+The octree root sizing and child-cell geometry are shared with the FMM tree
+builder so both solvers partition space consistently. Solver-specific traversal
+and approximation logic remain separate.
 
-The hierarchical data structure is now a 3D octree.
+### FMM
 
-Each node stores:
+The FMM path uses the same octree structure, but accumulates far-field work per
+cell and evaluates local expansions for particles. The implemented pipeline is:
 
-- bounding box center and half-width,
-- total mass,
-- center of mass,
-- child indices,
-- particle range or particle indices for leaves,
-- multipole coefficients,
-- local expansion coefficients,
-- interaction lists.
+1. P2M leaf multipole construction.
+2. M2M upward aggregation.
+3. M2L-style far-cell contributions into target local expansions.
+4. L2L downward propagation of local expansions.
+5. L2P local expansion evaluation for each target particle.
+6. P2P direct interactions for near leaves.
 
-### 3.3 Transitional Barnes-Hut/treecode mode
+Expansion orders `0`, `2`, and `4` are supported. Higher orders are out of
+scope for this implementation.
 
-Before the full FMM pass is complete, the tree can support a Barnes-Hut-style approximation:
+### MPI
 
-```text
-if node_size / distance < theta:
-    approximate node by aggregate mass
-else:
-    recurse into children
-```
-
-This stage is useful for debugging tree construction, center-of-mass calculations, and performance comparisons.
-
-### 3.4 FMM pass structure
-
-The intended FMM pipeline is:
-
-1. **P2M:** convert particles in a leaf node into multipole coefficients,
-2. **M2M:** aggregate child multipoles upward into parent multipoles,
-3. **M2L:** convert well-separated source node multipoles into target node local expansions,
-4. **L2L:** propagate local expansions downward from parent to child,
-5. **L2P:** evaluate local expansions at particle positions,
-6. **P2P:** compute direct interactions for near-field particles/nodes.
-
-The current implementation supports `p=0` monopole, `p=2` quadrupole, and `p=4` fourth-order Cartesian moments. Orders above `p=4` are intentionally out of scope for this project.
-
-### 3.5 Near/far criteria
-
-The MVP will use a geometric well-separated test based on node size and node separation. Later versions can implement level-restricted trees and standard FMM interaction lists.
-
-## 4. MPI distributed design
-
-### 4.1 Initial decomposition
-
-Start with particle-count decomposition:
+MPI uses contiguous particle ownership ranges:
 
 ```text
 rank k owns particles [start_k, end_k)
 ```
 
-This is easier to implement and validate.
+Each rank computes accelerations for its owned range, synchronizes full particle
+state with `MPI_Allgatherv`, and rank 0 writes snapshots, diagnostics, and
+metadata. This decomposition prioritizes validation and reproducible output over
+load-balanced spatial partitioning.
 
-### 4.2 Later decomposition
+### CUDA
 
-Upgrade to spatial decomposition using octree partitions or space-filling curves, such as Morton/Z-order keys.
+CUDA support is optional. When available, the simulator provides GPU execution
+paths for direct, tree, and FMM solver modes. CPU fallback paths preserve the
+same public solver names when CUDA is not available.
 
-### 4.3 Required MPI operations
+The CUDA implementation uses structure-of-arrays force inputs, pinned host
+staging, device buffer reuse across steps, shared-memory tiling for direct P2P,
+and specialized tree/FMM kernels for expansion orders `0`, `2`, and `4`.
 
-- global particle count synchronization,
-- global bounding box reduction,
-- rank-local tree construction,
-- exchange of far-field summaries,
-- exchange of ghost or boundary particles for near-field calculations,
-- reduction of diagnostic quantities,
-- coordinated snapshot output.
+## Output and Provenance
 
-### 4.4 MPI metrics
+Each run writes `metadata.json` in the configured output directory. Metadata is
+written even when snapshots are disabled with `[output] format = "none"`.
 
-Measure:
+The metadata records:
 
-- compute time,
-- communication time,
-- load imbalance,
-- strong scaling,
-- weak scaling,
-- parallel efficiency.
+- git commit, branch, and dirty working-tree state,
+- build type, compiler, and requested CMake MPI/CUDA options,
+- CUDA availability and device name,
+- MPI rank count,
+- hostname and UTC timestamp,
+- config path and config SHA-256 hash.
 
-## 5. CUDA design
+Snapshot output supports CSV, Apache Parquet, and disabled output:
 
-CUDA acceleration should be introduced only after CPU profiling identifies bottlenecks.
-
-Likely first CUDA targets:
-
-1. near-field P2P interactions,
-2. particle integration,
-3. local expansion evaluation,
-4. particle-to-multipole accumulation.
-
-### 5.1 Data layout
-
-Use structure-of-arrays layout for GPU-friendly memory access:
-
-```cpp
-struct ParticleArrays {
-    double* x;
-    double* y;
-    double* vx;
-    double* vy;
-    double* ax;
-    double* ay;
-    double* mass;
-};
+```toml
+[output]
+directory = "experiments/example"
+format = "csv"      # csv, parquet, none
+snapshot_every = 10
 ```
 
-Avoid an array-of-structs layout in CUDA kernels unless profiling justifies it.
+Parquet conversion is handled by the Python utility `python.utils.parquet_io`.
+Set `FMM_GALAXY_PYTHON` when the simulator should use a specific Python
+interpreter.
 
-### 5.2 CUDA metrics
+Diagnostics are written as CSV when output is enabled. Acceleration dumps can be
+enabled for direct-vs-approximate residual datasets.
 
-Measure:
+## Experiment Tooling
 
-- kernel time,
-- host-device transfer time,
-- achieved speedup vs CPU,
-- occupancy and memory bandwidth where practical.
+The Python runtime utilities provide shared helpers for:
 
-## 6. Snapshot I/O
+- simulator executable discovery,
+- temporary config generation,
+- dotted TOML updates,
+- galaxy particle-count synchronization,
+- subprocess execution and log capture,
+- metadata and diagnostics loading,
+- resume behavior for sweep runs.
 
-### 6.1 Preferred format
+These helpers are used by sweeps, benchmarks, force-error comparisons, residual
+dataset generation, and the real-mode ML environment.
 
-Use HDF5 if available. If HDF5 creates build friction, use a portable binary format plus JSON metadata first.
+## Benchmarking and ML Data
 
-Target schema:
+Benchmarking emphasizes both speed and accuracy:
 
-```text
-/snapshots/step_000000/positions     shape [N, dim]
-/snapshots/step_000000/velocities    shape [N, dim]
-/snapshots/step_000000/accelerations shape [N, dim], optional
-/snapshots/step_000000/masses        shape [N]
-/snapshots/step_000000/group_id      shape [N]
-/snapshots/step_000000/time          scalar
-/metadata/config                      JSON string
-/metadata/git_commit                  string, optional
-```
+- runtime per step,
+- particle-steps per second,
+- force RMSE and relative force error against direct summation,
+- energy, momentum, and angular momentum drift,
+- optional memory usage.
 
-### 6.2 Output cadence
+ML dataset generation consumes sweep outputs and produces versioned, tabular
+datasets for solver tuning, force-error modeling, per-step diagnostics, and
+acceleration residual correction. Model artifacts include training metadata and
+remain traceable to run metadata and dataset schema versions.
 
-Simulation timestep and snapshot cadence should be independent:
+## Validation
 
-```text
-steps = 10000
-snapshot_every = 25
-```
+Validation is split across focused C++ tests and Python smoke commands:
 
-## 7. Galaxy initial conditions
+- math/direct force and integrator checks,
+- tree/FMM accuracy against direct summation,
+- CUDA fallback parity against CPU paths,
+- config parsing, provenance, and snapshot I/O,
+- force-error benchmark smoke runs,
+- sweep dry-runs,
+- ML dataset/model smoke paths.
 
-The galaxy generator should support:
-
-- exponential disk profile,
-- approximate circular velocities,
-- optional bulge component,
-- optional halo approximation,
-- galaxy origin position,
-- galaxy bulk velocity,
-- orientation/inclination,
-- group ID assignment.
-
-Collision configs should expose:
-
-- mass ratio,
-- impact parameter,
-- relative velocity,
-- orientation,
-- initial separation,
-- softening,
-- timestep,
-- simulation duration.
-
-## 8. Validation plan
-
-### 8.1 Physics validation
-
-- two-body orbit stability,
-- circular disk stability,
-- total momentum conservation,
-- angular momentum tracking,
-- energy drift over time.
-
-### 8.2 Solver validation
-
-Compare approximate solvers to direct sum:
-
-- mean relative force error,
-- median relative force error,
-- max relative force error,
-- runtime vs particle count,
-- memory usage.
-
-### 8.3 Distributed validation
-
-Compare single-process and MPI runs with identical seeds/configs.
-
-## 9. Final demo plan
-
-The final project should produce:
-
-- one cinematic galaxy collision MP4,
-- one shorter README GIF,
-- benchmark plots,
-- direct/Barnes-Hut/FMM comparison table,
-- architecture diagram,
-- reproducible configs.
-
-## 10. Implementation priorities
-
-1. Direct-sum correctness.
-2. Snapshot output and Python loader.
-3. Octree construction.
-4. Treecode approximation.
-5. FMM passes.
-6. Galaxy initial conditions.
-7. MPI distribution.
-8. CUDA hot kernels.
-9. Polished visualization.
+CUDA-enabled builds should also be tested on a machine with an actual CUDA
+toolchain and device, because CPU-only builds validate fallback behavior but do
+not compile or execute `.cu` kernels.

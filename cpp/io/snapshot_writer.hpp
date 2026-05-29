@@ -3,6 +3,7 @@
 #include "core/config.hpp"
 #include "core/diagnostics.hpp"
 #include "core/particle.hpp"
+#include "core/provenance.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -14,14 +15,21 @@ class SnapshotWriter {
 public:
     explicit SnapshotWriter(const SimulationConfig& config);
 
-    void write_metadata(const SimulationConfig& config, std::size_t particle_count);
+    void write_metadata(
+        const SimulationConfig& config,
+        std::size_t particle_count,
+        const RunProvenance& provenance
+    );
     void write_snapshot(int step, double time, const std::vector<Particle>& particles);
+    void write_accelerations(int step, double time, const std::vector<Particle>& particles);
     void write_diagnostics(int step, double time, const Diagnostics& diagnostics, std::size_t particle_count);
 
 private:
     std::filesystem::path directory_;
     std::ofstream diagnostics_stream_;
+    OutputFormat format_{OutputFormat::Csv};
     bool enabled_{true};
+    bool acceleration_dump_{false};
 };
 
 }  // namespace fmmgalaxy

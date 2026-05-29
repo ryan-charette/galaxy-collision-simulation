@@ -53,7 +53,6 @@ private:
     FlatTreeData export_flat_tree() const;
     bool is_leaf(const Node& node) const;
     bool contains(const Node& node, const Vec2& position) const;
-    int child_index_for(const Node& node, const Vec2& position) const;
 };
 
 void compute_tree_accelerations(

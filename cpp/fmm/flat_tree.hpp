@@ -15,6 +15,7 @@ struct FlatTreeNode {
     double mass{0.0};
     Vec2 center_of_mass{};
     CartesianMoments moments{};
+    LocalExpansion local{};
     std::array<int, 8> children{{-1, -1, -1, -1, -1, -1, -1, -1}};
     std::size_t particle_begin{0};
     std::size_t particle_count{0};
@@ -28,8 +29,6 @@ struct FlatTreeData {
 
 struct FlatFmmLeaf {
     int node_index{-1};
-    std::size_t far_begin{0};
-    std::size_t far_count{0};
     std::size_t near_begin{0};
     std::size_t near_count{0};
 };
@@ -37,7 +36,6 @@ struct FlatFmmLeaf {
 struct FlatFmmData {
     FlatTreeData tree{};
     std::vector<FlatFmmLeaf> leaves{};
-    std::vector<int> far_node_indices{};
     std::vector<int> near_leaf_node_indices{};
     std::vector<int> particle_leaf_indices{};
 };

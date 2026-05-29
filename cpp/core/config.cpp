@@ -74,6 +74,17 @@ std::string lowercase(std::string value) {
     return value;
 }
 
+bool parse_bool(std::string value) {
+    value = lowercase(unquote(std::move(value)));
+    if (value == "true" || value == "1" || value == "yes" || value == "on") {
+        return true;
+    }
+    if (value == "false" || value == "0" || value == "no" || value == "off") {
+        return false;
+    }
+    throw std::runtime_error("Expected boolean value, got: " + value);
+}
+
 void set_simulation_value(SimulationConfig& config, const std::string& key, const std::string& value) {
     if (key == "name") {
         config.name = unquote(value);
@@ -112,7 +123,11 @@ void set_output_value(SimulationConfig& config, const std::string& key, const st
     if (key == "directory") {
         config.output.directory = unquote(value);
     } else if (key == "format") {
-        config.output.format = lowercase(unquote(value));
+        config.output.format = parse_output_format(unquote(value));
+    } else if (key == "acceleration_dump" || key == "dump_accelerations") {
+        config.output.acceleration_dump = parse_bool(value);
+    } else if (key == "snapshot_every") {
+        config.snapshot_every = std::stoi(value);
     }
 }
 
@@ -139,6 +154,32 @@ void set_galaxy_value(GalaxyConfig& galaxy, const std::string& key, const std::s
 }
 
 }  // namespace
+
+OutputFormat parse_output_format(const std::string& value) {
+    const std::string normalized = lowercase(value);
+    if (normalized == "csv") {
+        return OutputFormat::Csv;
+    }
+    if (normalized == "parquet") {
+        return OutputFormat::Parquet;
+    }
+    if (normalized == "none") {
+        return OutputFormat::None;
+    }
+    throw std::runtime_error("output.format must be csv, parquet, or none");
+}
+
+std::string output_format_name(OutputFormat format) {
+    switch (format) {
+        case OutputFormat::Csv:
+            return "csv";
+        case OutputFormat::Parquet:
+            return "parquet";
+        case OutputFormat::None:
+            return "none";
+    }
+    throw std::runtime_error("Unknown output format");
+}
 
 SimulationConfig default_config() {
     SimulationConfig config;

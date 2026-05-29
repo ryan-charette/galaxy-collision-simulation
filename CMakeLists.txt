@@ -9,11 +9,24 @@ project(DistributedFMMGalaxySim
 option(ENABLE_MPI "Enable MPI support when available" ON)
 option(ENABLE_CUDA "Enable CUDA support when available" ON)
 
+if(ENABLE_MPI)
+    set(FMM_GALAXY_CMAKE_ENABLE_MPI 1)
+else()
+    set(FMM_GALAXY_CMAKE_ENABLE_MPI 0)
+endif()
+
+if(ENABLE_CUDA)
+    set(FMM_GALAXY_CMAKE_ENABLE_CUDA 1)
+else()
+    set(FMM_GALAXY_CMAKE_ENABLE_CUDA 0)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CheckLanguage)
+find_package(OpenMP QUIET)
 
 set(HAVE_MPI 0)
 if(ENABLE_MPI)
@@ -50,12 +63,16 @@ add_library(fmm_galaxy_core
     cpp/core/diagnostics.cpp
     cpp/core/initial_conditions.cpp
     cpp/core/integrator.cpp
+    cpp/core/provenance.cpp
+    cpp/core/simulation_runner.cpp
     cpp/core/simulation_info.cpp
     cpp/cuda/cuda_solver_stub.cpp
     cpp/direct/direct_solver.cpp
     cpp/fmm/fmm_solver.cpp
     cpp/fmm/multipole.cpp
     cpp/fmm/quadtree.cpp
+    cpp/fmm/tree_geometry.cpp
+    cpp/io/parquet_converter.cpp
     cpp/io/snapshot_writer.cpp
     cpp/mpi/distributed_solver.cpp
 )
@@ -69,6 +86,12 @@ target_include_directories(fmm_galaxy_core
 if(HAVE_MPI)
     target_link_libraries(fmm_galaxy_core PUBLIC MPI::MPI_CXX)
     target_compile_definitions(fmm_galaxy_core PUBLIC FMM_GALAXY_HAVE_MPI=1)
+endif()
+
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(fmm_galaxy_core PUBLIC OpenMP::OpenMP_CXX)
+elseif(MSVC)
+    target_compile_options(fmm_galaxy_core PUBLIC /openmp)
 endif()
 
 if(HAVE_CUDA)
@@ -105,7 +128,11 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     add_executable(fmm_galaxy_tests
+        cpp/tests/config_snapshot_tests.cpp
+        cpp/tests/cuda_fallback_tests.cpp
+        cpp/tests/math_direct_tests.cpp
         cpp/tests/smoke_tests.cpp
+        cpp/tests/tree_fmm_accuracy_tests.cpp
     )
     target_link_libraries(fmm_galaxy_tests PRIVATE fmm_galaxy_core)
     if(HAVE_CUDA)
@@ -118,3 +145,4 @@ message(STATUS "Build summary:")
 message(STATUS "  C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  MPI enabled:  ${HAVE_MPI}")
 message(STATUS "  CUDA enabled: ${HAVE_CUDA}")
+message(STATUS "  OpenMP:       ${OpenMP_CXX_FOUND}")
