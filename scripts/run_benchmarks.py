@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import platform
 import statistics
-import subprocess
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.experiment_utils import benchmark_env, write_two_galaxy_config
+from scripts.experiment_utils import run_simulator, write_two_galaxy_config
 
 
 @dataclass(frozen=True)
@@ -78,32 +75,20 @@ def run_case(
         seed=20260502,
     )
 
-    command = [str(executable), "--config", str(config_path)]
-    started = time.perf_counter()
-    completed = subprocess.run(
-        command,
-        cwd=Path.cwd(),
-        env=benchmark_env(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
-    )
-    seconds = time.perf_counter() - started
-    if completed.returncode != 0:
+    completed = run_simulator(executable, config_path, output_dir, cwd=Path.cwd())
+    if completed.exit_code != 0:
         raise RuntimeError(
             f"Benchmark failed for solver={solver} particles={particles} replicate={replicate}\n"
             + completed.stdout
         )
-    metadata_path = output_dir / "metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+    metadata = completed.metadata
     return BenchmarkCase(
         output_format,
         solver,
         particles,
         steps,
         replicate,
-        seconds,
+        completed.seconds,
         metadata.get("git_commit", "unavailable"),
         metadata.get("config_sha256", "unavailable"),
         metadata.get("build_type", "unknown"),

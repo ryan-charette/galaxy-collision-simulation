@@ -12,7 +12,7 @@ import numpy as np
 
 from python.ml import DATASET_SCHEMA_VERSION
 from python.ml.datasets import load_dataset, numeric_matrix, save_model_bundle, write_json
-from python.ml.features import FeatureTransformer, StandardScaler, make_regressor
+from python.ml.features import make_regressor
 from python.ml.residuals import (
     RESIDUAL_SCHEMA_VERSION,
     RESIDUAL_TARGETS,
@@ -24,6 +24,7 @@ from python.ml.residuals import (
     residual_feature_columns,
     split_by_config,
 )
+from python.ml.training import fit_feature_pipeline
 
 
 def make_residual_regressor(args: argparse.Namespace) -> Any:
@@ -38,10 +39,7 @@ def train(args: argparse.Namespace) -> None:
         raise ValueError("Need at least two residual rows")
 
     numeric_features, categorical_features = residual_feature_columns(frame)
-    transformer = FeatureTransformer(numeric_features, categorical_features).fit(frame)
-    features = transformer.transform(frame)
-    scaler = StandardScaler().fit(features)
-    features = scaler.transform(features)
+    transformer, scaler, features = fit_feature_pipeline(frame, numeric_features, categorical_features)
     targets = numeric_matrix(frame, RESIDUAL_TARGETS)
 
     train_indices, test_indices, train_groups, test_groups = split_by_config(
@@ -123,4 +121,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

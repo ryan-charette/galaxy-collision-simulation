@@ -18,7 +18,7 @@ Deliverables:
 
 Goal: implement correct `O(N^2)` gravitational force calculation.
 
-Status: implemented in the MVP.
+Status: implemented.
 
 Deliverables:
 
@@ -58,7 +58,7 @@ Deliverables:
 
 Goal: make outputs easy to inspect, plot, and render.
 
-Status: implemented with CSV/Parquet snapshots, JSON metadata, diagnostics CSV, Python loaders, static plotting, and MP4/GIF animation scripts. HDF5 remains a possible future large-run format.
+Status: implemented with CSV/Parquet snapshots, JSON metadata, diagnostics CSV, Python loaders, static plotting, and MP4/GIF animation scripts.
 
 Deliverables:
 
@@ -84,12 +84,13 @@ Deliverables:
 
 Goal: accelerate measured bottlenecks.
 
-Status: implemented for the direct/P2P path with CUDA acceleration and CPU fallback. The current GPU path supports direct accelerations and leapfrog stepping for `solver = "cuda-direct"`.
+Status: implemented for direct/P2P acceleration and for GPU evaluation of CPU-built tree/FMM interaction data, with CPU fallback when CUDA is not available. The public solver names are `cuda-direct`, `cuda-tree`, and `cuda-fmm`. The CUDA path reuses device buffers across steps, stages host transfers through pinned memory, and specializes tree/FMM kernels for expansion orders `0`, `2`, and `4`.
 
 Deliverables:
 
 - GPU P2P near-field kernel,
 - GPU integration kernel,
+- GPU tree/FMM force-evaluation paths,
 - CPU/GPU result comparison,
 - kernel timing report.
 

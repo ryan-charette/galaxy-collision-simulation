@@ -64,12 +64,15 @@ add_library(fmm_galaxy_core
     cpp/core/initial_conditions.cpp
     cpp/core/integrator.cpp
     cpp/core/provenance.cpp
+    cpp/core/simulation_runner.cpp
     cpp/core/simulation_info.cpp
     cpp/cuda/cuda_solver_stub.cpp
     cpp/direct/direct_solver.cpp
     cpp/fmm/fmm_solver.cpp
     cpp/fmm/multipole.cpp
     cpp/fmm/quadtree.cpp
+    cpp/fmm/tree_geometry.cpp
+    cpp/io/parquet_converter.cpp
     cpp/io/snapshot_writer.cpp
     cpp/mpi/distributed_solver.cpp
 )
@@ -125,7 +128,11 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     add_executable(fmm_galaxy_tests
+        cpp/tests/config_snapshot_tests.cpp
+        cpp/tests/cuda_fallback_tests.cpp
+        cpp/tests/math_direct_tests.cpp
         cpp/tests/smoke_tests.cpp
+        cpp/tests/tree_fmm_accuracy_tests.cpp
     )
     target_link_libraries(fmm_galaxy_tests PRIVATE fmm_galaxy_core)
     if(HAVE_CUDA)

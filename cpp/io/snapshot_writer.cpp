@@ -1,6 +1,8 @@
 #include "io/snapshot_writer.hpp"
 
-#include <cstdlib>
+#include "io/json_writer.hpp"
+#include "io/parquet_converter.hpp"
+
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -8,22 +10,6 @@
 namespace fmmgalaxy {
 
 namespace {
-
-std::string escaped_json(const std::string& value) {
-    std::string escaped;
-    escaped.reserve(value.size());
-    for (const char ch : value) {
-        if (ch == '"' || ch == '\\') {
-            escaped.push_back('\\');
-        }
-        escaped.push_back(ch);
-    }
-    return escaped;
-}
-
-const char* json_bool(bool value) {
-    return value ? "true" : "false";
-}
 
 std::string snapshot_stem(int step) {
     std::ostringstream name;
@@ -39,18 +25,6 @@ std::string acceleration_filename(int step) {
     std::ostringstream name;
     name << "accelerations_" << std::setw(6) << std::setfill('0') << step << ".csv";
     return name.str();
-}
-
-std::string quote_command_arg(const std::string& value) {
-    std::string quoted = "\"";
-    for (const char ch : value) {
-        if (ch == '"') {
-            quoted.push_back('\\');
-        }
-        quoted.push_back(ch);
-    }
-    quoted.push_back('"');
-    return quoted;
 }
 
 void write_csv_particle_table_file(
@@ -86,35 +60,6 @@ void write_csv_particle_table_file(
     }
 }
 
-bool run_parquet_converter(
-    const std::filesystem::path& csv_path,
-    const std::filesystem::path& parquet_path,
-    int step,
-    double time
-) {
-    std::vector<std::string> python_commands;
-    if (const char* configured_python = std::getenv("FMM_GALAXY_PYTHON")) {
-        python_commands.emplace_back(quote_command_arg(configured_python));
-    }
-    python_commands.emplace_back("python");
-    python_commands.emplace_back("python3");
-    python_commands.emplace_back("py -3");
-
-    for (const auto& python : python_commands) {
-        std::ostringstream command;
-        command << python
-                << " -m python.utils.parquet_io"
-                << " --input " << quote_command_arg(csv_path.string())
-                << " --output " << quote_command_arg(parquet_path.string())
-                << " --step " << step
-                << " --time " << std::setprecision(17) << time;
-        if (std::system(command.str().c_str()) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 }  // namespace
 
 SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(config.output.directory) {
@@ -125,6 +70,9 @@ SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(conf
     if (!enabled_) {
         return;
     }
+    python_commands.emplace_back("python");
+    python_commands.emplace_back("python3");
+    python_commands.emplace_back("py -3");
 
     diagnostics_stream_.open(directory_ / "diagnostics.csv", std::ios::trunc);
     if (!diagnostics_stream_) {
@@ -149,8 +97,12 @@ void SnapshotWriter::write_metadata(
     }
 
     metadata << "{\n";
-    metadata << "  \"name\": \"" << escaped_json(config.name) << "\",\n";
-    metadata << "  \"solver\": \"" << escaped_json(config.solver) << "\",\n";
+    metadata << "  \"name\": ";
+    write_json_string(metadata, config.name);
+    metadata << ",\n";
+    metadata << "  \"solver\": ";
+    write_json_string(metadata, config.solver);
+    metadata << ",\n";
     metadata << "  \"particle_count\": " << particle_count << ",\n";
     metadata << "  \"steps\": " << config.steps << ",\n";
     metadata << "  \"dt\": " << config.dt << ",\n";
@@ -163,24 +115,44 @@ void SnapshotWriter::write_metadata(
     metadata << "  \"tree_theta\": " << config.tree_theta << ",\n";
     metadata << "  \"tree_leaf_capacity\": " << config.tree_leaf_capacity << ",\n";
     metadata << "  \"fmm_expansion_order\": " << config.fmm_expansion_order << ",\n";
-    metadata << "  \"git_commit\": \"" << escaped_json(provenance.git_commit) << "\",\n";
-    metadata << "  \"git_branch\": \"" << escaped_json(provenance.git_branch) << "\",\n";
+    metadata << "  \"git_commit\": ";
+    write_json_string(metadata, provenance.git_commit);
+    metadata << ",\n";
+    metadata << "  \"git_branch\": ";
+    write_json_string(metadata, provenance.git_branch);
+    metadata << ",\n";
     metadata << "  \"git_dirty\": " << json_bool(provenance.git_dirty) << ",\n";
-    metadata << "  \"build_type\": \"" << escaped_json(provenance.build_type) << "\",\n";
-    metadata << "  \"compiler\": \"" << escaped_json(provenance.compiler) << "\",\n";
-    metadata << "  \"compiler_version\": \"" << escaped_json(provenance.compiler_version) << "\",\n";
+    metadata << "  \"build_type\": ";
+    write_json_string(metadata, provenance.build_type);
+    metadata << ",\n";
+    metadata << "  \"compiler\": ";
+    write_json_string(metadata, provenance.compiler);
+    metadata << ",\n";
+    metadata << "  \"compiler_version\": ";
+    write_json_string(metadata, provenance.compiler_version);
+    metadata << ",\n";
     metadata << "  \"cmake_options\": {\n";
     metadata << "    \"ENABLE_MPI\": " << json_bool(provenance.cmake_enable_mpi) << ",\n";
     metadata << "    \"ENABLE_CUDA\": " << json_bool(provenance.cmake_enable_cuda) << "\n";
     metadata << "  },\n";
     metadata << "  \"cuda_available\": " << json_bool(provenance.cuda_available) << ",\n";
-    metadata << "  \"cuda_device_name\": \"" << escaped_json(provenance.cuda_device_name) << "\",\n";
+    metadata << "  \"cuda_device_name\": ";
+    write_json_string(metadata, provenance.cuda_device_name);
+    metadata << ",\n";
     metadata << "  \"mpi_enabled\": " << json_bool(provenance.mpi_enabled) << ",\n";
     metadata << "  \"rank_count\": " << provenance.rank_count << ",\n";
-    metadata << "  \"hostname\": \"" << escaped_json(provenance.hostname) << "\",\n";
-    metadata << "  \"timestamp_utc\": \"" << escaped_json(provenance.timestamp_utc) << "\",\n";
-    metadata << "  \"config_path\": \"" << escaped_json(provenance.config_path) << "\",\n";
-    metadata << "  \"config_sha256\": \"" << escaped_json(provenance.config_sha256) << "\"\n";
+    metadata << "  \"hostname\": ";
+    write_json_string(metadata, provenance.hostname);
+    metadata << ",\n";
+    metadata << "  \"timestamp_utc\": ";
+    write_json_string(metadata, provenance.timestamp_utc);
+    metadata << ",\n";
+    metadata << "  \"config_path\": ";
+    write_json_string(metadata, provenance.config_path);
+    metadata << ",\n";
+    metadata << "  \"config_sha256\": ";
+    write_json_string(metadata, provenance.config_sha256);
+    metadata << "\n";
     metadata << "}\n";
 }
 
@@ -198,7 +170,8 @@ void SnapshotWriter::write_snapshot(int step, double time, const std::vector<Par
     if (format_ == OutputFormat::Parquet) {
         const auto temp_csv_path = directory_ / (snapshot_stem(step) + ".parquet.tmp.csv");
         write_csv_particle_table_file(temp_csv_path, time, particles, "snapshot");
-        const bool converted = run_parquet_converter(temp_csv_path, output_path, step, time);
+        const bool converted =
+            ParquetConverter{}.convert_snapshot_csv(temp_csv_path, output_path, step, time);
         std::filesystem::remove(temp_csv_path);
         if (!converted) {
             throw std::runtime_error(

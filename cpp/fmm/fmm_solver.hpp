@@ -75,7 +75,6 @@ private:
 
     bool is_leaf(const Node& node) const;
     bool well_separated(const Node& target, const Node& source) const;
-    int child_index_for(const Node& node, const Vec2& position) const;
 };
 
 void compute_fmm_accelerations(

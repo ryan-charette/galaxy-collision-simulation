@@ -4,15 +4,10 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import math
 import platform
 import statistics
-import struct
-import subprocess
 import sys
-import time
-import zlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -26,8 +21,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from python.utils.snapshots import load_diagnostics, load_snapshot
 from scripts.experiment_utils import (
-    benchmark_env,
     resolve_simulator_executable,
+    run_simulator,
     safe_float_label,
     write_two_galaxy_config,
 )
@@ -113,42 +108,16 @@ def write_config(
 
 
 def run_simulation(executable: Path, config_path: Path, output_dir: Path) -> RunResult:
-    command = [str(executable), "--config", str(config_path)]
-    peak_memory_mb: float | None = None
-    psutil = None
-    try:
-        import psutil as psutil_module  # type: ignore
-
-        psutil = psutil_module
-    except ImportError:
-        psutil = None
-
-    started = time.perf_counter()
-    process = subprocess.Popen(
-        command,
+    completed = run_simulator(
+        executable,
+        config_path,
+        output_dir,
         cwd=Path.cwd(),
-        env=benchmark_env(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
+        capture_memory=True,
     )
-    if psutil is not None:
-        tracked = psutil.Process(process.pid)
-        while process.poll() is None:
-            try:
-                rss = tracked.memory_info().rss / (1024.0 * 1024.0)
-                peak_memory_mb = max(peak_memory_mb or 0.0, rss)
-            except psutil.Error:
-                pass
-            time.sleep(0.02)
-    stdout, _ = process.communicate()
-    seconds = time.perf_counter() - started
-    if process.returncode != 0:
-        raise RuntimeError(f"Simulation failed for {config_path}\n{stdout}")
-
-    metadata_path = output_dir / "metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
-    return RunResult(output_dir, seconds, peak_memory_mb, metadata)
+    if completed.exit_code != 0:
+        raise RuntimeError(f"Simulation failed for {config_path}\n{completed.stdout}")
+    return RunResult(output_dir, completed.seconds, completed.peak_memory_mb, completed.metadata)
 
 
 def force_error(reference_dir: Path, candidate_dir: Path) -> tuple[float, float, float]:
@@ -388,11 +357,7 @@ def write_markdown_summary(path: Path, results: list[AccuracyResult]) -> None:
 
 
 def plot_results(output: Path, results: list[AccuracyResult]) -> None:
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        plot_results_basic_png(output, results)
-        return
+    import matplotlib.pyplot as plt
 
     output.mkdir(parents=True, exist_ok=True)
     colors = {"tree": "tab:blue", "fmm": "tab:orange", "cuda-tree": "tab:green", "cuda-fmm": "tab:red"}
@@ -450,150 +415,6 @@ def plot_results(output: Path, results: list[AccuracyResult]) -> None:
         "Momentum drift",
         log_x=True,
     )
-
-
-def write_png(path: Path, width: int, height: int, pixels: bytearray) -> None:
-    def chunk(kind: bytes, data: bytes) -> bytes:
-        payload = kind + data
-        return struct.pack(">I", len(data)) + payload + struct.pack(">I", zlib.crc32(payload) & 0xFFFFFFFF)
-
-    rows = bytearray()
-    stride = width * 3
-    for y in range(height):
-        rows.append(0)
-        rows.extend(pixels[y * stride : (y + 1) * stride])
-
-    png = bytearray(b"\x89PNG\r\n\x1a\n")
-    png.extend(chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)))
-    png.extend(chunk(b"IDAT", zlib.compress(bytes(rows), level=9)))
-    png.extend(chunk(b"IEND", b""))
-    path.write_bytes(png)
-
-
-def draw_pixel(
-    pixels: bytearray,
-    width: int,
-    height: int,
-    x: int,
-    y: int,
-    color: tuple[int, int, int],
-) -> None:
-    if 0 <= x < width and 0 <= y < height:
-        offset = (y * width + x) * 3
-        pixels[offset : offset + 3] = bytes(color)
-
-
-def draw_line(
-    pixels: bytearray,
-    width: int,
-    height: int,
-    x0: int,
-    y0: int,
-    x1: int,
-    y1: int,
-    color: tuple[int, int, int],
-) -> None:
-    dx = abs(x1 - x0)
-    dy = -abs(y1 - y0)
-    sx = 1 if x0 < x1 else -1
-    sy = 1 if y0 < y1 else -1
-    error = dx + dy
-    while True:
-        draw_pixel(pixels, width, height, x0, y0, color)
-        if x0 == x1 and y0 == y1:
-            break
-        twice_error = 2 * error
-        if twice_error >= dy:
-            error += dy
-            x0 += sx
-        if twice_error <= dx:
-            error += dx
-            y0 += sy
-
-
-def draw_circle(
-    pixels: bytearray,
-    width: int,
-    height: int,
-    cx: int,
-    cy: int,
-    radius: int,
-    color: tuple[int, int, int],
-) -> None:
-    radius_squared = radius * radius
-    for y in range(cy - radius, cy + radius + 1):
-        for x in range(cx - radius, cx + radius + 1):
-            if (x - cx) * (x - cx) + (y - cy) * (y - cy) <= radius_squared:
-                draw_pixel(pixels, width, height, x, y, color)
-
-
-def plot_basic_scatter(
-    path: Path,
-    results: list[AccuracyResult],
-    x_name: str,
-    y_name: str,
-    log_x: bool = False,
-) -> None:
-    width, height = 900, 560
-    left, right, top, bottom = 70, 30, 30, 60
-    pixels = bytearray([255] * width * height * 3)
-    plot_left, plot_right = left, width - right
-    plot_top, plot_bottom = top, height - bottom
-    axis_color = (40, 40, 40)
-    grid_color = (220, 220, 220)
-    colors = {
-        "tree": (31, 119, 180),
-        "fmm": (255, 127, 14),
-        "cuda-tree": (44, 160, 44),
-        "cuda-fmm": (214, 39, 40),
-    }
-
-    x_values = [float(getattr(result, x_name)) for result in results]
-    y_values = [max(float(getattr(result, y_name)), 1.0e-16) for result in results]
-    if log_x:
-        x_values = [math.log2(max(value, 1.0e-16)) for value in x_values]
-    y_values = [math.log10(value) for value in y_values]
-    x_min, x_max = min(x_values), max(x_values)
-    y_min, y_max = min(y_values), max(y_values)
-    if x_min == x_max:
-        x_min -= 0.5
-        x_max += 0.5
-    if y_min == y_max:
-        y_min -= 0.5
-        y_max += 0.5
-
-    for fraction in (0.25, 0.5, 0.75):
-        x = int(plot_left + fraction * (plot_right - plot_left))
-        y = int(plot_bottom - fraction * (plot_bottom - plot_top))
-        draw_line(pixels, width, height, x, plot_top, x, plot_bottom, grid_color)
-        draw_line(pixels, width, height, plot_left, y, plot_right, y, grid_color)
-    draw_line(pixels, width, height, plot_left, plot_bottom, plot_right, plot_bottom, axis_color)
-    draw_line(pixels, width, height, plot_left, plot_bottom, plot_left, plot_top, axis_color)
-
-    for result in results:
-        x_value = float(getattr(result, x_name))
-        if log_x:
-            x_value = math.log2(max(x_value, 1.0e-16))
-        y_value = math.log10(max(float(getattr(result, y_name)), 1.0e-16))
-        x = int(plot_left + (x_value - x_min) / (x_max - x_min) * (plot_right - plot_left))
-        y = int(plot_bottom - (y_value - y_min) / (y_max - y_min) * (plot_bottom - plot_top))
-        draw_circle(pixels, width, height, x, y, 5, colors.get(result.solver, (90, 90, 90)))
-
-    write_png(path, width, height, pixels)
-
-
-def plot_results_basic_png(output: Path, results: list[AccuracyResult]) -> None:
-    output.mkdir(parents=True, exist_ok=True)
-    plot_basic_scatter(
-        output / "force_error_vs_n.png",
-        results,
-        "particles",
-        "relative_force_error",
-        log_x=True,
-    )
-    plot_basic_scatter(output / "force_error_vs_theta.png", results, "theta", "relative_force_error")
-    plot_basic_scatter(output / "energy_drift.png", results, "particles", "energy_drift", log_x=True)
-    plot_basic_scatter(output / "momentum_drift.png", results, "particles", "momentum_drift", log_x=True)
 
 
 def parse_args() -> argparse.Namespace:

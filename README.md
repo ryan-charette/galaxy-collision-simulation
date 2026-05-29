@@ -157,16 +157,17 @@ See `docs/benchmarks/README.md` for the benchmark index and `experiments/benchma
 ## Repository Layout
 
 ```text
-cpp/core/       core particles, config, integrator, diagnostics, CLI
+cpp/core/       config, provenance, integrator, diagnostics, CLI, simulation runner
 cpp/direct/     direct softened-gravity solver
-cpp/fmm/        Barnes-Hut treecode and p=4 FMM solver
+cpp/fmm/        shared tree geometry, Barnes-Hut treecode, and FMM solver
 cpp/mpi/        rank ownership and particle synchronization helpers
 cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
-cpp/io/         CSV/Parquet snapshot and diagnostics writer
+cpp/io/         CSV/Parquet snapshot, diagnostics, JSON, and conversion helpers
 cpp/tests/      C++ smoke/unit tests
 python/utils/   snapshot and diagnostics loaders
-python/analysis/static plots
-python/animation/MP4/GIF rendering
+python/analysis/ static plots and solver-crossover reports
+python/ml/      dataset utilities, supervised models, and RL environment helpers
+python/animation/ MP4/GIF rendering
 configs/        simulation configs
 experiments/    output destinations and experiment notes
 docs/           design, architecture, milestones, testing plan

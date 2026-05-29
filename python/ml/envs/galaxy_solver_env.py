@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import time
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +15,7 @@ import pandas as pd
 from python.ml.datasets import load_model_bundle
 from python.ml.features import estimate_tree_depth
 from python.ml.recommend_config import add_force_predictions, direct_runtime_estimate, predict_cost
+from scripts.experiment_utils import run_simulator
 from scripts import sweep as sweep_runner
 
 try:  # Gymnasium is optional; the local smoke path uses the fallback classes.
@@ -335,21 +335,14 @@ class GalaxySolverEnv(gym.Env if gym is not None else _Env):
         sweep_runner.sync_galaxy_particle_counts(config)
         config_path = self.output_root / "configs" / f"{output_dir.name}.toml"
         sweep_runner.write_toml(config_path, config)
-        command = [str(self.executable), "--config", str(config_path)]
-        started = time.perf_counter()
-        import subprocess
-
-        completed = subprocess.run(
-            command,
+        completed = run_simulator(
+            self.executable,
+            config_path,
+            output_dir,
             cwd=Path.cwd(),
-            env=sweep_runner.benchmark_env(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
         )
-        runtime = time.perf_counter() - started
-        if completed.returncode != 0:
+        runtime = completed.seconds
+        if completed.exit_code != 0:
             return {
                 "runtime_cost": runtime,
                 "force_error": 1.0,

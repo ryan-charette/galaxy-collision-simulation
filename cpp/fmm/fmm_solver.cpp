@@ -1,11 +1,10 @@
 #include "fmm/fmm_solver.hpp"
 
 #include "direct/direct_solver.hpp"
+#include "fmm/tree_geometry.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <initializer_list>
-#include <limits>
 
 namespace fmmgalaxy {
 
@@ -66,35 +65,11 @@ void FastMultipoleSolver::build(const std::vector<Particle>& particles) {
 
     nodes_.reserve(particles.size() * 2 + 1);
 
-    Vec2 min_position{
-        std::numeric_limits<double>::infinity(),
-        std::numeric_limits<double>::infinity(),
-        std::numeric_limits<double>::infinity(),
-    };
-    Vec2 max_position{
-        -std::numeric_limits<double>::infinity(),
-        -std::numeric_limits<double>::infinity(),
-        -std::numeric_limits<double>::infinity(),
-    };
-
-    for (const auto& particle : particles) {
-        min_position.x = std::min(min_position.x, particle.position.x);
-        min_position.y = std::min(min_position.y, particle.position.y);
-        min_position.z = std::min(min_position.z, particle.position.z);
-        max_position.x = std::max(max_position.x, particle.position.x);
-        max_position.y = std::max(max_position.y, particle.position.y);
-        max_position.z = std::max(max_position.z, particle.position.z);
-    }
+    const TreeRootCube root_cube = root_cube_for_particles(particles, params_);
 
     Node root;
-    root.center = (min_position + max_position) * 0.5;
-    root.half_width = 0.5 * std::max({
-        max_position.x - min_position.x,
-        max_position.y - min_position.y,
-        max_position.z - min_position.z,
-    });
-    root.half_width = std::max(root.half_width, params_.softening + 1.0e-6);
-    root.half_width *= 1.0001;
+    root.center = root_cube.center;
+    root.half_width = root_cube.half_width;
     root.local = zero_local_expansion(root.center, root.half_width, options_.expansion_order);
     nodes_.push_back(root);
 
@@ -116,28 +91,13 @@ bool FastMultipoleSolver::is_leaf(const Node& node) const {
     return node.children[0] < 0;
 }
 
-int FastMultipoleSolver::child_index_for(const Node& node, const Vec2& position) const {
-    const int east = position.x >= node.center.x ? 1 : 0;
-    const int north = position.y >= node.center.y ? 1 : 0;
-    const int up = position.z >= node.center.z ? 1 : 0;
-    return east + 2 * north + 4 * up;
-}
-
 void FastMultipoleSolver::subdivide(int node_index) {
     const Node node = nodes_[static_cast<std::size_t>(node_index)];
     const double child_half_width = node.half_width * 0.5;
 
     for (int child = 0; child < 8; ++child) {
-        const double x_sign = (child & 1) ? 1.0 : -1.0;
-        const double y_sign = (child & 2) ? 1.0 : -1.0;
-        const double z_sign = (child & 4) ? 1.0 : -1.0;
-
         Node child_node;
-        child_node.center = {
-            node.center.x + x_sign * child_half_width,
-            node.center.y + y_sign * child_half_width,
-            node.center.z + z_sign * child_half_width,
-        };
+        child_node.center = child_center(node.center, child_half_width, child);
         child_node.half_width = child_half_width;
         child_node.parent = node_index;
         child_node.depth = node.depth + 1;
@@ -172,7 +132,7 @@ void FastMultipoleSolver::insert_particle(int node_index, std::size_t particle_i
     }
 
     const Node& current = nodes_[static_cast<std::size_t>(node_index)];
-    const int child = child_index_for(current, (*particles_)[particle_index].position);
+    const int child = child_index_for_position(current.center, (*particles_)[particle_index].position);
     insert_particle(current.children[static_cast<std::size_t>(child)], particle_index, depth + 1);
 }
 
@@ -520,13 +480,6 @@ FlatFmmData FastMultipoleSolver::export_flat_fmm() const {
 
         FlatFmmLeaf flat_leaf;
         flat_leaf.node_index = leaf_node_index;
-        flat_leaf.far_begin = flat.far_node_indices.size();
-        flat_leaf.far_count = leaf.far_nodes.size();
-        flat.far_node_indices.insert(
-            flat.far_node_indices.end(),
-            leaf.far_nodes.begin(),
-            leaf.far_nodes.end()
-        );
         flat_leaf.near_begin = flat.near_leaf_node_indices.size();
         flat_leaf.near_count = leaf.near_leaves.size();
         flat.near_leaf_node_indices.insert(

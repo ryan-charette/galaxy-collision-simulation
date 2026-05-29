@@ -7,8 +7,6 @@ import csv
 import math
 import platform
 import statistics
-import struct
-import zlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -162,140 +160,10 @@ def load_points(runtime_csvs: list[Path], accuracy_csvs: list[Path]) -> tuple[li
     return median_runtime(runtime_points), accuracy_points
 
 
-def write_png(path: Path, width: int, height: int, pixels: bytearray) -> None:
-    def chunk(kind: bytes, data: bytes) -> bytes:
-        payload = kind + data
-        return struct.pack(">I", len(data)) + payload + struct.pack(">I", zlib.crc32(payload) & 0xFFFFFFFF)
+def plot_outputs(output: Path, runtime_points: list[RuntimePoint], accuracy_points: list[AccuracyPoint]) -> None:
+    import matplotlib.pyplot as plt
 
-    rows = bytearray()
-    stride = width * 3
-    for y in range(height):
-        rows.append(0)
-        rows.extend(pixels[y * stride : (y + 1) * stride])
-    png = bytearray(b"\x89PNG\r\n\x1a\n")
-    png.extend(chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)))
-    png.extend(chunk(b"IDAT", zlib.compress(bytes(rows), level=9)))
-    png.extend(chunk(b"IEND", b""))
-    path.write_bytes(png)
-
-
-def draw_pixel(pixels: bytearray, width: int, height: int, x: int, y: int, color: tuple[int, int, int]) -> None:
-    if 0 <= x < width and 0 <= y < height:
-        offset = (y * width + x) * 3
-        pixels[offset : offset + 3] = bytes(color)
-
-
-def draw_line(
-    pixels: bytearray,
-    width: int,
-    height: int,
-    x0: int,
-    y0: int,
-    x1: int,
-    y1: int,
-    color: tuple[int, int, int],
-) -> None:
-    dx = abs(x1 - x0)
-    dy = -abs(y1 - y0)
-    sx = 1 if x0 < x1 else -1
-    sy = 1 if y0 < y1 else -1
-    error = dx + dy
-    while True:
-        draw_pixel(pixels, width, height, x0, y0, color)
-        if x0 == x1 and y0 == y1:
-            break
-        twice_error = 2 * error
-        if twice_error >= dy:
-            error += dy
-            x0 += sx
-        if twice_error <= dx:
-            error += dx
-            y0 += sy
-
-
-def draw_circle(
-    pixels: bytearray,
-    width: int,
-    height: int,
-    cx: int,
-    cy: int,
-    radius: int,
-    color: tuple[int, int, int],
-) -> None:
-    for y in range(cy - radius, cy + radius + 1):
-        for x in range(cx - radius, cx + radius + 1):
-            if (x - cx) ** 2 + (y - cy) ** 2 <= radius**2:
-                draw_pixel(pixels, width, height, x, y, color)
-
-
-def basic_plot(
-    path: Path,
-    series: dict[str, list[tuple[float, float]]],
-    log_x: bool = True,
-    log_y: bool = True,
-) -> None:
-    width, height = 900, 560
-    left, right, top, bottom = 70, 30, 30, 60
-    pixels = bytearray([255] * width * height * 3)
-    plot_left, plot_right = left, width - right
-    plot_top, plot_bottom = top, height - bottom
-    colors = [(31, 119, 180), (255, 127, 14), (44, 160, 44), (214, 39, 40), (148, 103, 189)]
-    axis_color = (40, 40, 40)
-    grid_color = (220, 220, 220)
-
-    transformed: dict[str, list[tuple[float, float]]] = {}
-    for name, values in series.items():
-        rows = []
-        for x, y in values:
-            if x <= 0 or y <= 0:
-                continue
-            rows.append((math.log10(x) if log_x else x, math.log10(y) if log_y else y))
-        if rows:
-            transformed[name] = rows
-    if not transformed:
-        write_png(path, width, height, pixels)
-        return
-    xs = [x for rows in transformed.values() for x, _y in rows]
-    ys = [y for rows in transformed.values() for _x, y in rows]
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    if x_min == x_max:
-        x_min -= 0.5
-        x_max += 0.5
-    if y_min == y_max:
-        y_min -= 0.5
-        y_max += 0.5
-
-    for fraction in (0.25, 0.5, 0.75):
-        x = int(plot_left + fraction * (plot_right - plot_left))
-        y = int(plot_bottom - fraction * (plot_bottom - plot_top))
-        draw_line(pixels, width, height, x, plot_top, x, plot_bottom, grid_color)
-        draw_line(pixels, width, height, plot_left, y, plot_right, y, grid_color)
-    draw_line(pixels, width, height, plot_left, plot_bottom, plot_right, plot_bottom, axis_color)
-    draw_line(pixels, width, height, plot_left, plot_bottom, plot_left, plot_top, axis_color)
-
-    for index, (_name, values) in enumerate(sorted(transformed.items())):
-        color = colors[index % len(colors)]
-        last: tuple[int, int] | None = None
-        for x_value, y_value in sorted(values):
-            x = int(plot_left + (x_value - x_min) / (x_max - x_min) * (plot_right - plot_left))
-            y = int(plot_bottom - (y_value - y_min) / (y_max - y_min) * (plot_bottom - plot_top))
-            if last is not None:
-                draw_line(pixels, width, height, last[0], last[1], x, y, color)
-            draw_circle(pixels, width, height, x, y, 5, color)
-            last = (x, y)
-    write_png(path, width, height, pixels)
-
-
-def plot_with_matplotlib(
-    output: Path,
-    runtime_points: list[RuntimePoint],
-    accuracy_points: list[AccuracyPoint],
-) -> bool:
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        return False
+    output.mkdir(parents=True, exist_ok=True)
 
     def runtime_series(y_attr: str, ylabel: str, filename: str) -> None:
         fig, ax = plt.subplots(figsize=(7.2, 4.8))
@@ -329,27 +197,6 @@ def plot_with_matplotlib(
         fig.tight_layout()
         fig.savefig(output / "force_error_vs_runtime.png", dpi=180)
         plt.close(fig)
-    return True
-
-
-def plot_outputs(output: Path, runtime_points: list[RuntimePoint], accuracy_points: list[AccuracyPoint]) -> None:
-    output.mkdir(parents=True, exist_ok=True)
-    if plot_with_matplotlib(output, runtime_points, accuracy_points):
-        return
-
-    runtime_series: dict[str, list[tuple[float, float]]] = {}
-    particle_series: dict[str, list[tuple[float, float]]] = {}
-    for point in runtime_points:
-        key = f"{point.solver} ({point.output_format})"
-        runtime_series.setdefault(key, []).append((point.particles, point.seconds))
-        particle_series.setdefault(key, []).append((point.particles, point.particle_steps_per_second))
-    basic_plot(output / "runtime_vs_n.png", runtime_series)
-    basic_plot(output / "particle_steps_vs_n.png", particle_series)
-    error_series: dict[str, list[tuple[float, float]]] = {}
-    for point in accuracy_points:
-        error_series.setdefault(point.solver, []).append((point.seconds, point.relative_force_error))
-    basic_plot(output / "force_error_vs_runtime.png", error_series)
-
 
 def best_solver_by_n(runtime_points: list[RuntimePoint]) -> list[RuntimePoint]:
     grouped: dict[tuple[str, str, int], list[RuntimePoint]] = {}

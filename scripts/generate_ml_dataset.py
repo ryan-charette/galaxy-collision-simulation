@@ -12,188 +12,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 compatibility
-    import tomli as tomllib  # type: ignore
-
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts import sweep as sweep_runner
 
-
-DATASET_SCHEMA_VERSION = "0.1.0"
-
-SOLVER_TUNING_COLUMNS = [
-    "dataset_schema_version",
-    "run_id",
-    "status",
-    "exit_code",
-    "error",
-    "git_commit",
-    "config_sha256",
-    "hardware_type",
-    "solver",
-    "n_particles",
-    "steps",
-    "dt",
-    "softening",
-    "tree_theta",
-    "tree_leaf_capacity",
-    "fmm_expansion_order",
-    "output_format",
-    "median_step_time",
-    "total_wall_time",
-    "particle_steps_per_second",
-    "energy_drift_final",
-    "momentum_drift_final",
-    "max_energy_drift",
-    "max_momentum_drift",
-    "git_branch",
-    "git_dirty",
-    "build_type",
-    "compiler",
-    "compiler_version",
-    "cuda_available",
-    "cuda_device_name",
-    "mpi_enabled",
-    "rank_count",
-    "hostname",
-    "timestamp_utc",
-    "config_path",
-    "output_dir",
-    "log_path",
-]
-
-FORCE_ERROR_COLUMNS = [
-    "dataset_schema_version",
-    "run_id",
-    "direct_run_id",
-    "status",
-    "error",
-    "git_commit",
-    "config_sha256",
-    "direct_config_sha256",
-    "solver",
-    "n_particles",
-    "tree_theta",
-    "tree_leaf_capacity",
-    "fmm_expansion_order",
-    "softening",
-    "force_rmse",
-    "force_mae",
-    "force_max_error",
-    "relative_force_rmse",
-    "runtime_direct",
-    "runtime_approx",
-    "speedup_vs_direct",
-    "config_path",
-    "direct_config_path",
-    "output_dir",
-    "direct_output_dir",
-]
-
-PER_STEP_DIAGNOSTICS_COLUMNS = [
-    "dataset_schema_version",
-    "run_id",
-    "status",
-    "git_commit",
-    "config_sha256",
-    "solver",
-    "n_particles",
-    "step",
-    "time",
-    "kinetic_energy",
-    "potential_energy",
-    "total_energy",
-    "linear_momentum_x",
-    "linear_momentum_y",
-    "linear_momentum_z",
-    "angular_momentum_x",
-    "angular_momentum_y",
-    "angular_momentum_z",
-    "step_wall_time",
-    "config_path",
-    "output_dir",
-]
-
-DATASET_SCHEMAS = {
-    "solver_tuning": {
-        "columns": SOLVER_TUNING_COLUMNS,
-        "required": [
-            "dataset_schema_version",
-            "run_id",
-            "git_commit",
-            "config_sha256",
-            "solver",
-            "n_particles",
-            "steps",
-            "dt",
-            "softening",
-            "tree_theta",
-            "tree_leaf_capacity",
-            "fmm_expansion_order",
-            "output_format",
-            "median_step_time",
-            "total_wall_time",
-            "particle_steps_per_second",
-            "energy_drift_final",
-            "momentum_drift_final",
-            "max_energy_drift",
-            "max_momentum_drift",
-        ],
-    },
-    "force_error": {
-        "columns": FORCE_ERROR_COLUMNS,
-        "required": [
-            "dataset_schema_version",
-            "run_id",
-            "direct_run_id",
-            "git_commit",
-            "config_sha256",
-            "direct_config_sha256",
-            "solver",
-            "n_particles",
-            "tree_theta",
-            "tree_leaf_capacity",
-            "fmm_expansion_order",
-            "softening",
-            "force_rmse",
-            "force_mae",
-            "force_max_error",
-            "relative_force_rmse",
-            "runtime_direct",
-            "runtime_approx",
-            "speedup_vs_direct",
-        ],
-    },
-    "per_step_diagnostics": {
-        "columns": PER_STEP_DIAGNOSTICS_COLUMNS,
-        "required": [
-            "dataset_schema_version",
-            "run_id",
-            "git_commit",
-            "config_sha256",
-            "solver",
-            "n_particles",
-            "step",
-            "time",
-            "kinetic_energy",
-            "potential_energy",
-            "total_energy",
-            "linear_momentum_x",
-            "linear_momentum_y",
-            "linear_momentum_z",
-            "angular_momentum_x",
-            "angular_momentum_y",
-            "angular_momentum_z",
-            "step_wall_time",
-        ],
-    },
-}
+from python.ml.schemas import DATASET_SCHEMA_VERSION, DATASET_SCHEMAS
+from python.utils.tables import write_table
 
 
 @dataclass(frozen=True)
@@ -705,26 +531,6 @@ def summary_path_for(clean_path: Path) -> Path:
 
 def manifest_path_for(clean_path: Path) -> Path:
     return clean_path.with_suffix(clean_path.suffix + ".manifest.json")
-
-
-def write_table(path: Path, rows: list[dict[str, Any]], columns: list[str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.suffix.lower() == ".parquet":
-        try:
-            import pandas as pd
-
-            pd.DataFrame(rows, columns=columns).to_parquet(path, index=False, engine="pyarrow")
-        except ImportError as exc:
-            raise RuntimeError(
-                "Parquet dataset output requires pandas and pyarrow. Install project "
-                "dependencies or use a .csv output path for local smoke tests."
-            ) from exc
-        return
-
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def missing_counts(rows: list[dict[str, Any]], required_columns: list[str]) -> dict[str, int]:

@@ -3,35 +3,17 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
 from pathlib import Path
 
-import numpy as np
-
-from python.ml import DATASET_SCHEMA_VERSION
 from python.ml.datasets import (
     completed_rows,
     finite_target_rows,
     load_dataset,
-    numeric_matrix,
-    save_model_bundle,
-    train_test_split_indices,
-    write_json,
-)
-from python.ml.evaluation import (
-    baseline_metrics,
-    markdown_report,
-    model_beats_baseline,
-    regression_metrics,
-    solver_selection_accuracy,
 )
 from python.ml.features import (
-    FeatureTransformer,
-    MeanRegressor,
-    StandardScaler,
-    make_regressor,
     runtime_feature_columns,
 )
+from python.ml.training import RegressionTrainingConfig, train_regression_bundle
 
 
 DEFAULT_TARGETS = [
@@ -48,74 +30,26 @@ def train(args: argparse.Namespace) -> None:
         raise ValueError("Need at least two completed rows with finite targets")
 
     numeric_features, categorical_features = runtime_feature_columns(frame)
-    transformer = FeatureTransformer(numeric_features, categorical_features).fit(frame)
-    features = transformer.transform(frame)
-    scaler = StandardScaler().fit(features)
-    features = scaler.transform(features)
-    targets = numeric_matrix(frame, args.targets)
-
-    split = train_test_split_indices(len(frame), args.test_fraction, args.seed)
-    x_train, y_train = features[split.train_indices], targets[split.train_indices]
-    x_test, y_test = features[split.test_indices], targets[split.test_indices]
-    test_frame = frame.iloc[split.test_indices].copy()
-
-    model = make_regressor(args.model, args.seed)
-    model.fit(x_train, y_train)
-    baseline = MeanRegressor().fit(y_train)
-
-    predictions = model.predict(x_test)
-    if predictions.ndim == 1:
-        predictions = predictions[:, None]
-    baseline_predictions = baseline.predict(len(x_test))
-    metrics = regression_metrics(y_test, predictions, args.targets)
-    mean_metrics = baseline_metrics(y_test, baseline_predictions, args.targets)
-    beats = model_beats_baseline(metrics, mean_metrics)
-    selection_accuracy = solver_selection_accuracy(
-        test_frame,
-        predictions,
-        args.targets,
-        "median_step_time",
+    result = train_regression_bundle(
+        frame,
+        RegressionTrainingConfig(
+            dataset_type="solver_tuning",
+            model_kind="solver_cost",
+            report_title="Solver Cost Model Evaluation",
+            targets=args.targets,
+            numeric_features=numeric_features,
+            categorical_features=categorical_features,
+            model_type=args.model,
+            seed=args.seed,
+            test_fraction=args.test_fraction,
+            dataset_path=args.data,
+            output_path=args.output,
+            report_path=args.report,
+            selection_objective="median_step_time",
+        ),
     )
-
-    metadata = {
-        "dataset_schema_version": DATASET_SCHEMA_VERSION,
-        "dataset_type": "solver_tuning",
-        "model_kind": "solver_cost",
-        "model_type": args.model,
-        "targets": args.targets,
-        "feature_names": transformer.feature_names,
-        "train_rows": int(len(split.train_indices)),
-        "test_rows": int(len(split.test_indices)),
-        "dataset_path": str(args.data),
-        "trained_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    bundle = {
-        **metadata,
-        "feature_transformer": transformer,
-        "feature_scaler": scaler,
-        "model": model,
-        "mean_baseline": baseline,
-        "metrics": metrics,
-        "mean_baseline_metrics": mean_metrics,
-        "beats_mean_baseline": beats,
-        "solver_selection_accuracy": selection_accuracy,
-    }
-    save_model_bundle(args.output, bundle)
-
-    report_path = args.report or args.output.with_suffix(args.output.suffix + ".report.md")
-    report = markdown_report(
-        "Solver Cost Model Evaluation",
-        metadata,
-        metrics,
-        mean_metrics,
-        beats,
-        selection_accuracy,
-    )
-    Path(report_path).parent.mkdir(parents=True, exist_ok=True)
-    Path(report_path).write_text(report, encoding="utf-8")
-    write_json(args.output.with_suffix(args.output.suffix + ".metadata.json"), metadata)
     print(f"Wrote {args.output}")
-    print(f"Wrote {report_path}")
+    print(f"Wrote {result['report_path']}")
 
 
 def parse_args() -> argparse.Namespace:

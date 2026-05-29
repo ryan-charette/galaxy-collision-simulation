@@ -5,9 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import subprocess
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,8 +22,8 @@ from python.ml.features import estimate_tree_depth
 from python.ml.residuals import RESIDUAL_SCHEMA_VERSION
 from python.utils.snapshots import load_acceleration_dump
 from scripts.experiment_utils import (
-    benchmark_env,
     resolve_simulator_executable,
+    run_simulator,
     safe_float_label,
     write_two_galaxy_config,
 )
@@ -75,27 +73,25 @@ def run_simulation(
         metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
         return SimRun(output_dir.name, config_path, output_dir, acceleration_path, metadata, 0.0)
 
-    command = [str(executable), "--config", str(config_path)]
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    started = time.perf_counter()
-    completed = subprocess.run(
-        command,
+    completed = run_simulator(
+        executable,
+        config_path,
+        output_dir,
         cwd=REPO_ROOT,
-        env=benchmark_env(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
+        log_path=log_path,
     )
-    seconds = time.perf_counter() - started
-    log_path.write_text(completed.stdout, encoding="utf-8")
-    if completed.returncode != 0:
+    if completed.exit_code != 0:
         raise RuntimeError(f"Simulation failed for {config_path}. See {log_path}")
     if not acceleration_path.exists():
         raise RuntimeError(f"Simulation did not write {acceleration_path}")
-    metadata_path = output_dir / "metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
-    return SimRun(output_dir.name, config_path, output_dir, acceleration_path, metadata, seconds)
+    return SimRun(
+        output_dir.name,
+        config_path,
+        output_dir,
+        acceleration_path,
+        completed.metadata,
+        completed.seconds,
+    )
 
 
 def particle_context_features(

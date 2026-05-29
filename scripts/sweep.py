@@ -7,10 +7,7 @@ import csv
 import itertools
 import json
 import platform
-import shlex
-import subprocess
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from dataclasses import dataclass
@@ -18,18 +15,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
-    import tomli as tomllib  # type: ignore
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.experiment_utils import (
     benchmark_env as experiment_benchmark_env,
+    get_dotted,
+    load_toml,
+    read_diagnostics_summary as experiment_read_diagnostics,
+    read_metadata as experiment_read_metadata,
     resolve_simulator_executable,
+    run_simulator,
+    set_dotted,
+    sync_galaxy_particle_counts,
+    write_toml,
 )
 
 
@@ -141,66 +141,6 @@ def load_simple_yaml(path: Path) -> dict[str, Any]:
     return result
 
 
-def load_toml(path: Path) -> dict[str, Any]:
-    with path.open("rb") as handle:
-        return tomllib.load(handle)
-
-
-def toml_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return repr(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(toml_value(item) for item in value) + "]"
-    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{text}"'
-
-
-def write_toml(path: Path, config: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines: list[str] = []
-
-    def emit_table(prefix: list[str], table: dict[str, Any]) -> None:
-        scalar_items = [(key, value) for key, value in table.items() if not isinstance(value, dict)]
-        child_items = [(key, value) for key, value in table.items() if isinstance(value, dict)]
-        if prefix and scalar_items:
-            lines.append(f"[{'.'.join(prefix)}]")
-        for key, value in scalar_items:
-            lines.append(f"{key} = {toml_value(value)}")
-        if scalar_items or prefix:
-            lines.append("")
-        for key, child in child_items:
-            emit_table([*prefix, key], child)
-
-    for key, value in config.items():
-        if isinstance(value, dict):
-            emit_table([key], value)
-        else:
-            lines.append(f"{key} = {toml_value(value)}")
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-
-
-def set_dotted(config: dict[str, Any], dotted_key: str, value: Any) -> None:
-    parts = dotted_key.split(".")
-    target = config
-    for part in parts[:-1]:
-        next_value = target.setdefault(part, {})
-        if not isinstance(next_value, dict):
-            raise ValueError(f"Cannot set {dotted_key}: {part} is not a table")
-        target = next_value
-    target[parts[-1]] = value
-
-
-def get_dotted(config: dict[str, Any], dotted_key: str, default: Any = None) -> Any:
-    target: Any = config
-    for part in dotted_key.split("."):
-        if not isinstance(target, dict) or part not in target:
-            return default
-        target = target[part]
-    return target
-
-
 def sweep_values(parameters: dict[str, Any]) -> list[tuple[dict[str, Any], str]]:
     keys = list(parameters)
     value_lists = []
@@ -239,32 +179,6 @@ def apply_sweep_overrides(
     set_dotted(config, "output.directory", output_dir.as_posix())
     current_name = get_dotted(config, "simulation.name", "sweep")
     set_dotted(config, "simulation.name", f"{current_name}_{run_name}")
-
-
-def sync_galaxy_particle_counts(config: dict[str, Any]) -> None:
-    requested = get_dotted(config, "simulation.n_particles")
-    galaxies = config.get("galaxy")
-    if requested is None or not isinstance(galaxies, dict):
-        return
-    galaxy_items = [(name, galaxy) for name, galaxy in galaxies.items() if isinstance(galaxy, dict)]
-    if not galaxy_items:
-        return
-
-    requested_count = int(requested)
-    existing_counts = [max(int(galaxy.get("n_particles", 0)), 0) for _, galaxy in galaxy_items]
-    existing_total = sum(existing_counts)
-    if existing_total <= 0:
-        base = requested_count // len(galaxy_items)
-        counts = [base for _ in galaxy_items]
-    else:
-        raw_counts = [requested_count * count / existing_total for count in existing_counts]
-        counts = [int(value) for value in raw_counts]
-    remainder = requested_count - sum(counts)
-    for index in range(remainder):
-        counts[index % len(counts)] += 1
-
-    for (_, galaxy), count in zip(galaxy_items, counts, strict=True):
-        galaxy["n_particles"] = count
 
 
 def build_runs(sweep: dict[str, Any], grid_path: Path) -> tuple[Path, list[SweepRun]]:
@@ -312,48 +226,11 @@ def benchmark_env() -> dict[str, str]:
 
 
 def read_metadata(output_dir: Path) -> dict[str, Any]:
-    path = output_dir / "metadata.json"
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    return experiment_read_metadata(output_dir)
 
 
 def read_diagnostics(output_dir: Path) -> dict[str, float]:
-    path = output_dir / "diagnostics.csv"
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    if not rows:
-        return {}
-    first = rows[0]
-    last = rows[-1]
-
-    def as_float(row: dict[str, str], key: str) -> float:
-        try:
-            return float(row[key])
-        except (KeyError, ValueError):
-            return float("nan")
-
-    initial_energy = as_float(first, "total_energy")
-    final_energy = as_float(last, "total_energy")
-    return {
-        "initial_total_energy": initial_energy,
-        "final_total_energy": final_energy,
-        "energy_drift_abs": abs(final_energy - initial_energy),
-        "final_momentum_norm": (
-            as_float(last, "momentum_x") ** 2
-            + as_float(last, "momentum_y") ** 2
-            + as_float(last, "momentum_z") ** 2
-        )
-        ** 0.5,
-        "final_angular_momentum_norm": (
-            as_float(last, "angular_momentum_x") ** 2
-            + as_float(last, "angular_momentum_y") ** 2
-            + as_float(last, "angular_momentum_z") ** 2
-        )
-        ** 0.5,
-    }
+    return experiment_read_diagnostics(output_dir)
 
 
 def completed_result(run: SweepRun) -> SweepResult:
@@ -378,26 +255,16 @@ def execute_run(executable: Path, run: SweepRun, resume: bool) -> SweepResult:
         return completed_result(run)
 
     write_toml(run.config_path, run.config)
-    run.log_path.parent.mkdir(parents=True, exist_ok=True)
-    command = [str(executable), "--config", str(run.config_path)]
-    started = time.perf_counter()
-    with run.log_path.open("w", encoding="utf-8", newline="") as log:
-        log.write(f"$ {' '.join(shlex.quote(part) for part in command)}\n\n")
-        log.flush()
-        process = subprocess.run(
-            command,
-            cwd=REPO_ROOT,
-            env=benchmark_env(),
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-        )
-    seconds = time.perf_counter() - started
-    metadata = read_metadata(run.output_dir)
-    diagnostics = read_diagnostics(run.output_dir)
-    status = "completed" if process.returncode == 0 else "failed"
-    error = "" if process.returncode == 0 else f"exit code {process.returncode}"
+    completed = run_simulator(
+        executable,
+        run.config_path,
+        run.output_dir,
+        cwd=REPO_ROOT,
+        log_path=run.log_path,
+        resume_marker=run.output_dir / "metadata.json" if resume else None,
+    )
+    status = "completed" if completed.exit_code == 0 else "failed"
+    error = "" if completed.exit_code == 0 else f"exit code {completed.exit_code}"
     return SweepResult(
         run_id=run.run_id,
         repetition=run.repetition,
@@ -406,10 +273,10 @@ def execute_run(executable: Path, run: SweepRun, resume: bool) -> SweepResult:
         output_dir=run.output_dir,
         log_path=run.log_path,
         status=status,
-        exit_code=process.returncode,
-        seconds=seconds,
-        metadata=metadata,
-        diagnostics=diagnostics,
+        exit_code=completed.exit_code,
+        seconds=completed.seconds,
+        metadata=completed.metadata,
+        diagnostics=completed.diagnostics,
         error=error,
     )
 
