@@ -16,6 +16,7 @@ generation, baseline supervised models, and adaptive solver tuning utilities.
 design
 architecture
 testing
+tutorials/index
 benchmarks/index
 ```
 
