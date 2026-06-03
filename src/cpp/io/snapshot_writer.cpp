@@ -70,9 +70,6 @@ SnapshotWriter::SnapshotWriter(const SimulationConfig& config) : directory_(conf
     if (!enabled_) {
         return;
     }
-    python_commands.emplace_back("python");
-    python_commands.emplace_back("python3");
-    python_commands.emplace_back("py -3");
 
     diagnostics_stream_.open(directory_ / "diagnostics.csv", std::ios::trunc);
     if (!diagnostics_stream_) {

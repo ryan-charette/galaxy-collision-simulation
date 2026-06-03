@@ -157,17 +157,17 @@ See `docs/benchmarks/README.md` for the benchmark index and `experiments/benchma
 ## Repository Layout
 
 ```text
-cpp/core/       config, provenance, integrator, diagnostics, CLI, simulation runner
-cpp/direct/     direct softened-gravity solver
-cpp/fmm/        shared tree geometry, Barnes-Hut treecode, and FMM solver
-cpp/mpi/        rank ownership and particle synchronization helpers
-cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
-cpp/io/         CSV/Parquet snapshot, diagnostics, JSON, and conversion helpers
-cpp/tests/      C++ smoke/unit tests
-python/utils/   snapshot and diagnostics loaders
-python/analysis/ static plots and solver-crossover reports
-python/ml/      dataset utilities, supervised models, and RL environment helpers
-python/animation/ MP4/GIF rendering
+src/cpp/core/       config, provenance, integrator, diagnostics, CLI, simulation runner
+src/cpp/direct/     direct softened-gravity solver
+src/cpp/fmm/        shared tree geometry, Barnes-Hut treecode, and FMM solver
+src/cpp/mpi/        rank ownership and particle synchronization helpers
+src/cpp/cuda/       optional CUDA direct/P2P kernels and CPU fallback
+src/cpp/io/         CSV/Parquet snapshot, diagnostics, JSON, and conversion helpers
+src/cpp/tests/      C++ smoke/unit tests
+src/python/utils/   snapshot and diagnostics loaders
+src/python/analysis/ static plots and solver-crossover reports
+src/python/ml/      dataset utilities, supervised models, and RL environment helpers
+src/python/animation/ MP4/GIF rendering
 configs/        simulation configs
 experiments/    output destinations and experiment notes
 docs/           design, architecture, milestones, testing plan
@@ -268,8 +268,13 @@ Install dependencies:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev,test]"
 ```
+
+The Python package uses a `src/` layout. Installing the project editable makes
+commands such as `python -m python.analysis.plot_snapshots` work from the source
+checkout. If you prefer not to install the package, set `PYTHONPATH=src` before
+running module commands.
 
 Plot the latest snapshot and diagnostics:
 

@@ -61,6 +61,7 @@ tmp*/
 
 # Reference checkouts and local comparison material
 external/
+tools/
 
 # Editor
 .vscode/

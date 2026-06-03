@@ -43,7 +43,7 @@
 
 ## C++ modules
 
-### `cpp/core`
+### `src/cpp/core`
 
 Core types and algorithms that should not depend on MPI or CUDA:
 
@@ -54,11 +54,11 @@ Core types and algorithms that should not depend on MPI or CUDA:
 - diagnostics,
 - configuration helpers.
 
-### `cpp/direct`
+### `src/cpp/direct`
 
 Direct force solver. This is the correctness baseline.
 
-### `cpp/fmm`
+### `src/cpp/fmm`
 
 Tree and FMM implementation:
 
@@ -71,7 +71,7 @@ Tree and FMM implementation:
 - L2P,
 - P2P near-field.
 
-### `cpp/mpi`
+### `src/cpp/mpi`
 
 Distributed wrappers:
 
@@ -81,7 +81,7 @@ Distributed wrappers:
 - ghost particle exchange,
 - distributed diagnostics.
 
-### `cpp/cuda`
+### `src/cpp/cuda`
 
 GPU-specific pieces:
 
@@ -90,27 +90,27 @@ GPU-specific pieces:
 - integration kernels,
 - CUDA error wrappers.
 
-### `cpp/io`
+### `src/cpp/io`
 
 Snapshot and metadata writers.
 
 ## Python modules
 
-### `python/analysis`
+### `src/python/analysis`
 
 - force-error plots,
 - energy drift plots,
 - scaling plots,
 - benchmark tables.
 
-### `python/animation`
+### `src/python/animation`
 
 - scatter renderer,
 - density renderer,
 - camera paths,
 - video export.
 
-### `python/utils`
+### `src/python/utils`
 
 - snapshot loading,
 - config parsing,

@@ -9,10 +9,9 @@ from python.utils.parquet_io import csv_snapshot_to_parquet
 from python.utils.snapshots import load_snapshot
 
 
-pytest.importorskip("pyarrow")
-
-
 def test_parquet_snapshot_roundtrip(tmp_path: Path) -> None:
+    pytest.importorskip("pyarrow")
+
     csv_path = tmp_path / "snapshot_000010.csv"
     parquet_path = tmp_path / "snapshot_000010.parquet"
     csv_path.write_text(

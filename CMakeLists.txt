@@ -54,32 +54,32 @@ if(ENABLE_CUDA)
 endif()
 
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/core/build_config.hpp.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/core/build_config.hpp.in
     ${CMAKE_CURRENT_BINARY_DIR}/generated/build_config.hpp
 )
 
 add_library(fmm_galaxy_core
-    cpp/core/config.cpp
-    cpp/core/diagnostics.cpp
-    cpp/core/initial_conditions.cpp
-    cpp/core/integrator.cpp
-    cpp/core/provenance.cpp
-    cpp/core/simulation_runner.cpp
-    cpp/core/simulation_info.cpp
-    cpp/cuda/cuda_solver_stub.cpp
-    cpp/direct/direct_solver.cpp
-    cpp/fmm/fmm_solver.cpp
-    cpp/fmm/multipole.cpp
-    cpp/fmm/quadtree.cpp
-    cpp/fmm/tree_geometry.cpp
-    cpp/io/parquet_converter.cpp
-    cpp/io/snapshot_writer.cpp
-    cpp/mpi/distributed_solver.cpp
+    src/cpp/core/config.cpp
+    src/cpp/core/diagnostics.cpp
+    src/cpp/core/initial_conditions.cpp
+    src/cpp/core/integrator.cpp
+    src/cpp/core/provenance.cpp
+    src/cpp/core/simulation_runner.cpp
+    src/cpp/core/simulation_info.cpp
+    src/cpp/cuda/cuda_solver_stub.cpp
+    src/cpp/direct/direct_solver.cpp
+    src/cpp/fmm/fmm_solver.cpp
+    src/cpp/fmm/multipole.cpp
+    src/cpp/fmm/quadtree.cpp
+    src/cpp/fmm/tree_geometry.cpp
+    src/cpp/io/parquet_converter.cpp
+    src/cpp/io/snapshot_writer.cpp
+    src/cpp/mpi/distributed_solver.cpp
 )
 
 target_include_directories(fmm_galaxy_core
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp
         ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
@@ -96,12 +96,12 @@ endif()
 
 if(HAVE_CUDA)
     add_library(fmm_galaxy_cuda STATIC
-        cpp/cuda/cuda_solver.cu
-        cpp/cuda/cuda_smoke.cu
+        src/cpp/cuda/cuda_solver.cu
+        src/cpp/cuda/cuda_smoke.cu
     )
     target_include_directories(fmm_galaxy_cuda
         PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp
             ${CMAKE_CURRENT_BINARY_DIR}/generated
     )
     target_link_libraries(fmm_galaxy_cuda PUBLIC fmm_galaxy_core)
@@ -109,13 +109,13 @@ if(HAVE_CUDA)
 endif()
 
 add_executable(fmm_galaxy_sim
-    cpp/core/main.cpp
+    src/cpp/core/main.cpp
 )
 
 target_link_libraries(fmm_galaxy_sim PRIVATE fmm_galaxy_core)
 
 add_executable(fmm_galaxy_smoke
-    cpp/core/smoke_main.cpp
+    src/cpp/core/smoke_main.cpp
 )
 
 target_link_libraries(fmm_galaxy_smoke PRIVATE fmm_galaxy_core)
@@ -128,11 +128,11 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     add_executable(fmm_galaxy_tests
-        cpp/tests/config_snapshot_tests.cpp
-        cpp/tests/cuda_fallback_tests.cpp
-        cpp/tests/math_direct_tests.cpp
-        cpp/tests/smoke_tests.cpp
-        cpp/tests/tree_fmm_accuracy_tests.cpp
+        src/cpp/tests/config_snapshot_tests.cpp
+        src/cpp/tests/cuda_fallback_tests.cpp
+        src/cpp/tests/math_direct_tests.cpp
+        src/cpp/tests/smoke_tests.cpp
+        src/cpp/tests/tree_fmm_accuracy_tests.cpp
     )
     target_link_libraries(fmm_galaxy_tests PRIVATE fmm_galaxy_core)
     if(HAVE_CUDA)
