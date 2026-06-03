@@ -6,4 +6,4 @@ scikit-learn>=1.4
 gymnasium>=0.29
 pytest>=8.0
 pyyaml>=6.0
-tomli>=2.0; python_version < "3.11"
+tomli>=2.4.1; python_version < "3.11"
