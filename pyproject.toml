@@ -44,6 +44,17 @@ line-length = 100
 line-length = 100
 src = ["src/python", "scripts"]
 
+[tool.mypy]
+python_version = "3.10"
+files = ["scripts", "src/python"]
+ignore_missing_imports = true
+warn_unreachable = true
+enable_error_code = [
+    "ignore-without-code",
+    "redundant-expr",
+    "truthy-bool",
+]
+
 [tool.pytest.ini_options]
 minversion = "6"
 addopts = ["-ra", "--strict-config", "--strict-markers"]
