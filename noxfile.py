@@ -7,14 +7,14 @@ nox.options.sessions = ["py_compile", "tests"]
 @nox.session
 def py_compile(session: nox.Session) -> None:
     """Compile-check Python source files without installing runtime dependencies."""
-    session.run("python", "-m", "compileall", "-q", "scripts", "python", "tests")
+    session.run("python", "-m", "compileall", "-q", "scripts", "src/python", env={"PYTHONPATH": "src"})
 
 
 @nox.session
 def tests(session: nox.Session) -> None:
     """Run the Python test suite."""
     session.install(".[test]")
-    session.run("pytest", "tests", "python/tests")
+    session.run("pytest", "src/python/tests", env={"PYTHONPATH": "src"})
 
 
 @nox.session

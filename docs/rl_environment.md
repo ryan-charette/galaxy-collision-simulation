@@ -8,10 +8,10 @@ from runtime, force-error, and drift terms.
 The implementation lives in:
 
 ```text
-python/ml/envs/galaxy_solver_env.py
-python/ml/rl/baselines.py
-python/ml/rl/train_policy.py
-python/ml/rl/evaluate_policy.py
+src/python/ml/envs/galaxy_solver_env.py
+src/python/ml/rl/baselines.py
+src/python/ml/rl/train_policy.py
+src/python/ml/rl/evaluate_policy.py
 ```
 
 ## Modes

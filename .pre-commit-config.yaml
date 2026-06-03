@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: python-compileall
         name: Python compile check
-        entry: python -m compileall -q scripts python tests
+        entry: python -m compileall -q scripts src/python
         language: system
         pass_filenames: false
 

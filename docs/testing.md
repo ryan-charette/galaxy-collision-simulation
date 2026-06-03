@@ -17,15 +17,15 @@ Initial C++ unit tests should cover:
 - config parsing,
 - snapshot writing.
 
-These are covered by `cpp/tests/smoke_tests.cpp` and registered with CTest as `smoke_tests`.
+These are covered by `src/cpp/tests/smoke_tests.cpp` and registered with CTest as `smoke_tests`.
 The smoke executable is split into focused source files so failures point to the
 relevant subsystem:
 
-- `cpp/tests/math_direct_tests.cpp`
-- `cpp/tests/tree_fmm_accuracy_tests.cpp`
-- `cpp/tests/cuda_fallback_tests.cpp`
-- `cpp/tests/config_snapshot_tests.cpp`
-- `cpp/tests/smoke_tests.cpp` as the shared entrypoint
+- `src/cpp/tests/math_direct_tests.cpp`
+- `src/cpp/tests/tree_fmm_accuracy_tests.cpp`
+- `src/cpp/tests/cuda_fallback_tests.cpp`
+- `src/cpp/tests/config_snapshot_tests.cpp`
+- `src/cpp/tests/smoke_tests.cpp` as the shared entrypoint
 
 ## Physics sanity tests
 
