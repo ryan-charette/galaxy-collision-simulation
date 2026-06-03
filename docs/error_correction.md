@@ -13,7 +13,7 @@ The corrected one-step acceleration is:
 acceleration_approx + predicted_residual
 ```
 
-This does not replace direct, tree, FMM, CUDA, or MPI solvers. It is an
+This does not replace the direct, tree, FMM, CUDA, or MPI solvers. It is an
 evaluation layer for deciding whether learned residuals are accurate enough to
 justify deeper integration work.
 
@@ -29,11 +29,13 @@ acceleration_dump = true
 ```
 
 The simulator writes `accelerations_000000.csv`, `accelerations_000001.csv`,
-and so on. These files contain particle ids, group ids, positions, velocities,
+and so on. These files contain particle IDs, group IDs, positions, velocities,
 masses, and accelerations. They can be enabled even when snapshot output is
 disabled with `format = "none"`.
 
 ## Dataset Generation
+
+Generate a residual dataset:
 
 ```bash
 python scripts/generate_residual_dataset.py \
@@ -41,7 +43,7 @@ python scripts/generate_residual_dataset.py \
 ```
 
 The generator runs a direct reference and approximate solver cases on identical
-initial conditions, pairs the step-0 acceleration dumps by particle id, and
+initial conditions, pairs the step-0 acceleration dumps by particle ID, and
 writes one row per particle.
 
 Smoke profile:

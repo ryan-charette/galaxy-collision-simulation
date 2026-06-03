@@ -6,7 +6,7 @@
 import nox
 
 
-nox.needs_version = "2025.10.14"
+nox.needs_version = ">=2025.10.14"
 nox.options.default_venv_backend = "uv|virtualenv"
 
 
@@ -21,6 +21,28 @@ def tests(session: nox.Session) -> None:
     """Run the Python test suite."""
     session.install(".[test]")
     session.run("pytest", "src/python/tests", env={"PYTHONPATH": "src"})
+
+
+@nox.session
+def coverage(session: nox.Session) -> None:
+    """Generate Python coverage XML for Codecov."""
+    session.install(".[test,coverage]")
+    session.run(
+        "pytest",
+        "-p",
+        "no:cacheprovider",
+        "--cov=src/python",
+        "--cov-report=term-missing",
+        "--cov-report=xml:coverage/python.xml",
+        env={"PYTHONPATH": "src"},
+    )
+
+
+@nox.session
+def docs(session: nox.Session) -> None:
+    """Build the Sphinx/MyST documentation."""
+    session.install(".[docs]")
+    session.run("sphinx-build", "-b", "html", "-W", "--keep-going", "docs", "docs/_build/html")
 
 
 @nox.session

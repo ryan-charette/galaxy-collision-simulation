@@ -1,130 +1,139 @@
 # Milestones
 
-## Milestone 0: Project setup and design
+This page summarizes the implemented project phases and the remaining
+experiment-oriented work. It is a status record, not a promise of benchmark
+results.
 
-Status: complete in this scaffold.
+## Milestone 0: Project Setup and Design
 
-Deliverables:
+Status: complete.
 
-- repository structure,
-- CMake build system,
-- MPI/CUDA detection,
-- smoke-test executable,
-- Python environment,
-- design documentation,
-- experiment config template.
+Delivered:
 
-## Milestone 1: Direct-sum baseline
+- Repository structure.
+- CMake build system.
+- MPI/CUDA detection with CPU fallback.
+- C++ smoke-test executable.
+- Python environment and tooling.
+- Design documentation.
+- Experiment config templates.
 
-Goal: implement correct `O(N^2)` gravitational force calculation.
+## Milestone 1: Direct-Sum Baseline
 
 Status: implemented.
 
-Deliverables:
+Goal: implement correct `O(N^2)` softened gravitational force calculation.
 
-- particle state container,
-- softened pairwise force kernel,
-- leapfrog integrator,
-- snapshot output,
-- two-body and disk sanity tests.
+Delivered:
 
-## Milestone 2: Single-node FMM
+- Particle state container.
+- Softened pairwise force kernel.
+- Leapfrog integrator.
+- Snapshot output.
+- Two-body and disk sanity checks.
+
+## Milestone 2: Single-Node FMM
+
+Status: implemented.
 
 Goal: implement octree-based FMM on one CPU process.
 
-Status: implemented as a 3D octree FMM with monopole, quadrupole, and `p=4` Cartesian moments. The code now has explicit P2M/M2M aggregation, M2L-style far-cell interaction lists, P2P near-field leaves, target-range evaluation, and direct-vs-FMM smoke tests.
+Delivered:
 
-Deliverables:
+- Octree construction.
+- P2M, M2M, M2L-style, L2L, L2P, and P2P passes.
+- Monopole, quadrupole, and `p=4` Cartesian moments.
+- Direct-vs-FMM accuracy checks.
+- Runtime/error plotting support.
 
-- octree construction,
-- P2M/M2M/M2L/L2L/L2P/P2P passes,
-- direct-vs-FMM accuracy tests,
-- runtime/error plots.
+## Milestone 3: Galaxy Initial Conditions
 
-## Milestone 3: Galaxy initial conditions
+Status: implemented.
 
 Goal: generate collision-ready disk galaxies.
 
-Status: implemented for reproducible 3D exponential disk galaxies with configurable mass, radius, position, velocity, orientation, inclination, thickness, and group ID.
+Delivered:
 
-Deliverables:
+- Reproducible 3D exponential disk galaxy generator.
+- Configurable mass, radius, position, velocity, orientation, inclination,
+  thickness, and group ID.
+- Collision parameter configs.
+- Stable isolated-disk and galaxy-collision examples.
 
-- disk galaxy generator,
-- collision parameter configs,
-- stable isolated disk demo,
-- head-on and off-center collision demos.
+## Milestone 4: Snapshot I/O and Python Analysis
 
-## Milestone 4: Snapshot I/O and Python analysis
+Status: implemented.
 
 Goal: make outputs easy to inspect, plot, and render.
 
-Status: implemented with CSV/Parquet snapshots, JSON metadata, diagnostics CSV, Python loaders, static plotting, and MP4/GIF animation scripts.
+Delivered:
 
-Deliverables:
+- CSV snapshot schema.
+- Apache Parquet snapshot conversion.
+- JSON metadata and diagnostics CSV.
+- Python loaders.
+- Diagnostic plots.
+- Scatter and density animation helpers.
 
-- snapshot schema implementation,
-- Python loader,
-- diagnostic plots,
-- basic scatter animation.
+## Milestone 5: MPI Distributed CPU Solvers
 
-## Milestone 5: MPI distributed CPU FMM
+Status: implemented for particle-count decomposition.
 
-Goal: run the solver across multiple MPI ranks.
+Goal: run solver workflows across multiple MPI ranks.
 
-Status: implemented for particle-count decomposition. Each rank owns a contiguous particle range, evaluates local direct/FMM accelerations, synchronizes full particle state with `MPI_Allgatherv`, and rank 0 writes snapshots/diagnostics.
+Delivered:
 
-Deliverables:
+- Distributed particle ownership by contiguous range.
+- Full particle-state synchronization with `MPI_Allgatherv`.
+- Rank-0 snapshot and diagnostics output.
+- MPI-aware provenance metadata.
 
-- distributed particle ownership,
-- global bounding box reduction,
-- tree summary exchange,
-- scaling benchmarks.
+## Milestone 6: CUDA Acceleration
 
-## Milestone 6: CUDA acceleration
+Status: implemented with CPU fallback.
 
-Goal: accelerate measured bottlenecks.
+Goal: accelerate measured bottlenecks where CUDA is available.
 
-Status: implemented for direct/P2P acceleration and for GPU evaluation of CPU-built tree/FMM interaction data, with CPU fallback when CUDA is not available. The public solver names are `cuda-direct`, `cuda-tree`, and `cuda-fmm`. The CUDA path reuses device buffers across steps, stages host transfers through pinned memory, and specializes tree/FMM kernels for expansion orders `0`, `2`, and `4`.
+Delivered:
 
-Deliverables:
+- CUDA direct/P2P acceleration support.
+- GPU evaluation paths for CPU-built tree/FMM interaction data.
+- Public solver names `cuda-direct`, `cuda-tree`, and `cuda-fmm`.
+- Device buffer reuse across steps.
+- Pinned host staging.
+- Expansion-order specializations for `0`, `2`, and `4`.
+- CPU fallback behavior when CUDA is unavailable.
 
-- GPU P2P near-field kernel,
-- GPU integration kernel,
-- GPU tree/FMM force-evaluation paths,
-- CPU/GPU result comparison,
-- kernel timing report.
+## Milestone 7: Full Galaxy Collision Experiments
 
-## Milestone 7: Full galaxy collision experiments
+Status: supported by configuration and benchmark tooling.
 
-Goal: run the scientifically interesting and visually compelling cases.
+Experiment directions:
 
-Deliverables:
+- Timestep stability sweeps.
+- Impact-parameter sweeps.
+- Relative-velocity sweeps.
+- Mass-ratio sweeps.
+- Orientation sweeps.
 
-- timestep stability experiment,
-- impact parameter sweep,
-- relative velocity sweep,
-- mass ratio sweep,
-- orientation sweep.
+## Milestone 8: Animation Pipeline
 
-## Milestone 8: Animation pipeline
+Status: implemented for README-scale and analysis-scale outputs.
 
-Goal: produce portfolio-quality videos.
+Delivered:
 
-Deliverables:
+- Scatter and density renderers.
+- GIF and MP4 export helpers.
+- README artifact rendering scripts.
 
-- density renderer,
-- cinematic camera path,
-- MP4 export,
-- GIF export for README.
+## Milestone 9: Benchmarking and Evaluation
 
-## Milestone 9: Benchmarking and evaluation
+Status: implemented as repeatable scripts and documented artifacts.
 
-Goal: support all performance claims with measurements.
+Delivered:
 
-Deliverables:
-
-- runtime vs N,
-- speedup vs MPI ranks,
-- CPU vs CUDA speedup,
-- force error vs approximation setting,
-- energy drift plots.
+- Runtime benchmarks.
+- Force-error benchmarks.
+- Solver crossover analysis.
+- CSV/Parquet output comparison support.
+- Metadata-stamped benchmark artifacts.
