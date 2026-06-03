@@ -1,0 +1,19 @@
+comment: false
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+    patch:
+      default:
+        target: 0%
+
+flags:
+  python:
+    paths:
+      - src/python/
+  cpp:
+    paths:
+      - src/cpp/

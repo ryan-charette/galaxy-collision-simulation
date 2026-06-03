@@ -24,6 +24,21 @@ def tests(session: nox.Session) -> None:
 
 
 @nox.session
+def coverage(session: nox.Session) -> None:
+    """Generate Python coverage XML for Codecov."""
+    session.install(".[test,coverage]")
+    session.run(
+        "pytest",
+        "-p",
+        "no:cacheprovider",
+        "--cov=src/python",
+        "--cov-report=term-missing",
+        "--cov-report=xml:coverage/python.xml",
+        env={"PYTHONPATH": "src"},
+    )
+
+
+@nox.session
 def docs(session: nox.Session) -> None:
     """Build the Sphinx/MyST documentation."""
     session.install(".[docs]")

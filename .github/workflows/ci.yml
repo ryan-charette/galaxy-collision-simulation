@@ -55,3 +55,75 @@ jobs:
 
       - name: Run CTest
         run: ctest --test-dir build --output-on-failure
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install coverage tools
+        run: python -m pip install -e ".[test,coverage]"
+
+      - name: Run Python coverage
+        run: |
+          mkdir -p coverage
+          python -m pytest \
+            -p no:cacheprovider \
+            --cov=src/python \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage/python.xml
+
+      - name: Configure C++ coverage build
+        run: >
+          cmake -S . -B build-coverage
+          -DCMAKE_BUILD_TYPE=Debug
+          -DENABLE_MPI=OFF
+          -DENABLE_CUDA=OFF
+          -DCMAKE_CXX_FLAGS="--coverage -O0 -g"
+          -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+
+      - name: Build C++ coverage targets
+        run: cmake --build build-coverage --target fmm_galaxy_tests --parallel
+
+      - name: Run C++ coverage tests
+        run: ctest --test-dir build-coverage --output-on-failure
+
+      - name: Generate C++ coverage report
+        run: >
+          gcovr
+          --root .
+          --filter src/cpp
+          --exclude src/cpp/tests
+          --xml-pretty
+          --output coverage/cpp.xml
+          build-coverage
+
+      - name: Upload Python coverage to Codecov
+        uses: codecov/codecov-action@v6.0.1
+        with:
+          disable_search: true
+          files: coverage/python.xml
+          flags: python
+          name: python
+          use_oidc: true
+
+      - name: Upload C++ coverage to Codecov
+        uses: codecov/codecov-action@v6.0.1
+        with:
+          disable_search: true
+          files: coverage/cpp.xml
+          flags: cpp
+          name: cpp
+          use_oidc: true

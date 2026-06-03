@@ -38,6 +38,36 @@ pytest
 The project config sets `src` on `pythonpath`, enables strict pytest config and
 marker handling, and reports useful skip/failure summaries.
 
+## Coverage
+
+CI generates separate Python and C++ coverage reports and uploads both to
+Codecov:
+
+- `coverage/python.xml` from `pytest-cov`.
+- `coverage/cpp.xml` from `gcovr` after a GCC coverage build.
+
+Generate Python coverage locally with:
+
+```bash
+nox -s coverage
+```
+
+Generate C++ coverage locally on a GCC-compatible toolchain with:
+
+```bash
+cmake -S . -B build-coverage \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DENABLE_MPI=OFF \
+  -DENABLE_CUDA=OFF \
+  -DCMAKE_CXX_FLAGS="--coverage -O0 -g" \
+  -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+
+cmake --build build-coverage --target fmm_galaxy_tests --parallel
+ctest --test-dir build-coverage --output-on-failure
+gcovr --root . --filter src/cpp --exclude src/cpp/tests \
+  --xml-pretty --output coverage/cpp.xml build-coverage
+```
+
 ## Physics Sanity Cases
 
 ### Two-Body Orbit

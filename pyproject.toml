@@ -22,6 +22,11 @@ build-backend = "setuptools.build_meta"
 test = [
     "pytest>=8.0",
 ]
+coverage = [
+    "coverage[toml]>=7.6",
+    "gcovr>=8.3",
+    "pytest-cov>=6.0",
+]
 docs = [
     "furo>=2024.8.6",
     "myst-parser>=4.0",
@@ -36,6 +41,11 @@ dev = [
 test = [
     "pytest>=8.0",
 ]
+coverage = [
+    "coverage[toml]>=7.6",
+    "gcovr>=8.3",
+    "pytest-cov>=6.0",
+]
 docs = [
     "furo>=2024.8.6",
     "myst-parser>=4.0",
@@ -43,6 +53,7 @@ docs = [
 ]
 dev = [
     { include-group = "test" },
+    { include-group = "coverage" },
     { include-group = "docs" },
     "nox>=2024.4.15",
     "pre-commit>=3.7",
@@ -83,6 +94,17 @@ xfail_strict = true
 filterwarnings = ["error"]
 testpaths = ["src/python/tests"]
 pythonpath = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/python"]
+omit = [
+    "src/python/tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
 
 [tool.setuptools.packages.find]
 where = ["src"]

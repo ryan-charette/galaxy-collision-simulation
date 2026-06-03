@@ -16,6 +16,9 @@ CMakeCache.txt
 __pycache__/
 *.pyc
 *.egg-info/
+.coverage
+coverage/
+htmlcov/
 .ipynb_checkpoints/
 
 # Documentation
