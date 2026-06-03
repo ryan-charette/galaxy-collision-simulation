@@ -41,6 +41,11 @@ dev = [
 line-length = 100
 
 [tool.pytest.ini_options]
+minversion = "6"
+addopts = ["-ra", "--strict-config", "--strict-markers"]
+log_level = "INFO"
+xfail_strict = true
+filterwarnings = ["error"]
 testpaths = ["src/python/tests"]
 pythonpath = ["src"]
 
