@@ -1,20 +1,25 @@
 # Supervised Solver Models
 
-Supervised solver modeling trains baseline regressors from the generated ML
-datasets. Model artifacts are Python pickle bundles with:
+Supervised solver modeling trains baseline regressors from generated ML
+datasets. The models predict runtime, throughput, drift, and force-error metrics
+from simulation settings and hardware descriptors.
+
+Model artifacts are Python pickle bundles with stable keys:
 
 - `dataset_schema_version`
-- model kind and model type
-- target columns
-- fitted feature transformer
-- fitted model
-- mean-baseline metrics
-- training metadata
+- Model kind and model type.
+- Target columns.
+- Fitted feature transformer.
+- Fitted model.
+- Mean-baseline metrics.
+- Training metadata.
 
 The NumPy linear baseline works with only the core Python dependencies. Random
 forest and gradient-boosted tree models require `scikit-learn`.
 
-## Runtime And Drift Model
+## Runtime and Drift Model
+
+Train the solver cost model:
 
 ```bash
 python -m python.ml.train_solver_cost_model \
@@ -31,10 +36,12 @@ energy_drift_final
 momentum_drift_final
 ```
 
-Use `--model random_forest` or `--model gradient_boosting` after installing
+Use `--model random_forest` or `--model gradient_boosting` after installing the
 project dependencies.
 
 ## Force Error Model
+
+Train the force-error model:
 
 ```bash
 python -m python.ml.train_force_error_model \
@@ -51,6 +58,8 @@ relative_force_rmse
 
 ## Evaluation
 
+Evaluate a trained model against a dataset:
+
 ```bash
 python -m python.ml.evaluate_models \
   --model experiments/ml_models/solver_cost_model.pkl \
@@ -63,6 +72,8 @@ mean baseline per target, and solver-selection accuracy when solver groups are
 available.
 
 ## Recommendation
+
+Generate a simulator config snippet from trained models:
 
 ```bash
 python -m python.ml.recommend_config \

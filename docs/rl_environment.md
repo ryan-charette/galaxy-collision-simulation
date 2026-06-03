@@ -1,9 +1,9 @@
 # Adaptive Solver Tuning Environment
 
-The adaptive solver-tuning workflow adds a Gymnasium-compatible one-step
-environment. The environment is a contextual bandit first: the agent observes
-the simulation context, chooses one solver configuration, and receives a reward
-from runtime, force-error, and drift terms.
+The adaptive solver-tuning workflow provides a Gymnasium-compatible one-step
+environment. It starts as a contextual bandit: the agent observes the simulation
+context, chooses one solver configuration, and receives a reward based on
+runtime, force error, and drift terms.
 
 The implementation lives in:
 
@@ -16,11 +16,32 @@ src/python/ml/rl/evaluate_policy.py
 
 ## Modes
 
-- `cheap`: evaluates actions through the supervised runtime and force-error
-  models when available, with deterministic heuristics as a fallback.
-- `real`: writes a temporary TOML config and launches one short simulator run
-  for each selected action. This mode records runtime and diagnostics drift; it
-  does not compute direct-reference force error by itself.
+`cheap`
+: Evaluates actions through supervised runtime and force-error models when
+  available, with deterministic heuristics as a fallback.
+
+`real`
+: Writes a temporary TOML config and launches one short simulator run for each
+  selected action. This mode records runtime and diagnostics drift. It does not
+  compute direct-reference force error by itself.
+
+## Observation
+
+Observations describe the run and recent solver state:
+
+- Particle count.
+- Current solver family.
+- Tree/FMM parameters.
+- Hardware type.
+- Recent runtime and drift summaries.
+- Density, velocity, and bounding-box summaries when available.
+
+## Action Space
+
+Actions choose a solver configuration from a finite table. The table includes
+direct, tree, FMM, and CUDA-named solver variants where applicable, along with
+representative values for `tree_theta`, `tree_leaf_capacity`, and
+`fmm_expansion_order`.
 
 ## Reward
 
@@ -60,11 +81,11 @@ python -m python.ml.rl.train_policy \
 
 The training command writes:
 
-- the policy pickle bundle,
-- an episode history CSV,
-- a learned-vs-baseline comparison CSV,
-- a Markdown report,
-- metadata with observation keys and action-table size.
+- The policy pickle bundle.
+- An episode history CSV.
+- A learned-vs-baseline comparison CSV.
+- A Markdown report.
+- Metadata with observation keys and action-table size.
 
 ## Evaluation
 

@@ -15,7 +15,11 @@ CMakeCache.txt
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 .ipynb_checkpoints/
+
+# Documentation
+docs/_build/
 
 # Simulation outputs
 *.h5

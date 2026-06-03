@@ -8,16 +8,16 @@ generation, and baseline solver-selection models.
 
 The design favors reproducibility and comparison across solvers. Direct
 summation remains the correctness baseline. Approximate and accelerated solvers
-must be evaluated against force error, conservation diagnostics, wall time, and
+are evaluated against force error, conservation diagnostics, wall time, and
 hardware provenance.
 
 ## Particle Model
 
 Each particle stores:
 
-- 3D position, velocity, and acceleration,
-- mass,
-- integer group ID for source galaxy membership.
+- 3D position, velocity, and acceleration.
+- Mass.
+- Integer group ID for source galaxy membership.
 
 The simulator uses nondimensional code units by default. Planar experiments are
 represented by keeping the `z` components at zero.
@@ -51,7 +51,7 @@ providing updated particle accelerations.
 
 ## Solvers
 
-### Direct
+### Direct Summation
 
 The direct solver computes every pairwise interaction in `O(N^2)` time. It is
 used for small runs, regression tests, force-error benchmarks, and training data
@@ -68,7 +68,7 @@ The octree root sizing and child-cell geometry are shared with the FMM tree
 builder so both solvers partition space consistently. Solver-specific traversal
 and approximation logic remain separate.
 
-### FMM
+### Fast Multipole Method
 
 The FMM path uses the same octree structure, but accumulates far-field work per
 cell and evaluates local expansions for particles. The implemented pipeline is:
@@ -80,8 +80,8 @@ cell and evaluates local expansions for particles. The implemented pipeline is:
 5. L2P local expansion evaluation for each target particle.
 6. P2P direct interactions for near leaves.
 
-Expansion orders `0`, `2`, and `4` are supported. Higher orders are out of
-scope for this implementation.
+Expansion orders `0`, `2`, and `4` are supported. Higher orders are not
+implemented.
 
 ### MPI
 
@@ -111,14 +111,14 @@ and specialized tree/FMM kernels for expansion orders `0`, `2`, and `4`.
 Each run writes `metadata.json` in the configured output directory. Metadata is
 written even when snapshots are disabled with `[output] format = "none"`.
 
-The metadata records:
+Metadata records:
 
-- git commit, branch, and dirty working-tree state,
-- build type, compiler, and requested CMake MPI/CUDA options,
-- CUDA availability and device name,
-- MPI rank count,
-- hostname and UTC timestamp,
-- config path and config SHA-256 hash.
+- Git commit, branch, and dirty working-tree state.
+- Build type, compiler, and requested CMake MPI/CUDA options.
+- CUDA availability and device name.
+- MPI rank count.
+- Hostname and UTC timestamp.
+- Config path and config SHA-256 hash.
 
 Snapshot output supports CSV, Apache Parquet, and disabled output:
 
@@ -129,8 +129,8 @@ format = "csv"      # csv, parquet, none
 snapshot_every = 10
 ```
 
-Parquet conversion is handled by the Python utility `python.utils.parquet_io`.
-Set `FMM_GALAXY_PYTHON` when the simulator should use a specific Python
+Parquet conversion is handled by `python.utils.parquet_io`. Set
+`FMM_GALAXY_PYTHON` when the simulator should use a specific Python
 interpreter.
 
 Diagnostics are written as CSV when output is enabled. Acceleration dumps can be
@@ -140,13 +140,13 @@ enabled for direct-vs-approximate residual datasets.
 
 The Python runtime utilities provide shared helpers for:
 
-- simulator executable discovery,
-- temporary config generation,
-- dotted TOML updates,
-- galaxy particle-count synchronization,
-- subprocess execution and log capture,
-- metadata and diagnostics loading,
-- resume behavior for sweep runs.
+- Simulator executable discovery.
+- Temporary config generation.
+- Dotted TOML updates.
+- Galaxy particle-count synchronization.
+- Subprocess execution and log capture.
+- Metadata and diagnostics loading.
+- Resume behavior for sweep runs.
 
 These helpers are used by sweeps, benchmarks, force-error comparisons, residual
 dataset generation, and the real-mode ML environment.
@@ -155,11 +155,11 @@ dataset generation, and the real-mode ML environment.
 
 Benchmarking emphasizes both speed and accuracy:
 
-- runtime per step,
-- particle-steps per second,
-- force RMSE and relative force error against direct summation,
-- energy, momentum, and angular momentum drift,
-- optional memory usage.
+- Runtime per step.
+- Particle-steps per second.
+- Force RMSE and relative force error against direct summation.
+- Energy, momentum, and angular momentum drift.
+- Optional memory usage.
 
 ML dataset generation consumes sweep outputs and produces versioned, tabular
 datasets for solver tuning, force-error modeling, per-step diagnostics, and
@@ -170,12 +170,12 @@ remain traceable to run metadata and dataset schema versions.
 
 Validation is split across focused C++ tests and Python smoke commands:
 
-- math/direct force and integrator checks,
-- tree/FMM accuracy against direct summation,
-- CUDA fallback parity against CPU paths,
-- config parsing, provenance, and snapshot I/O,
-- force-error benchmark smoke runs,
-- sweep dry-runs,
+- Math/direct force and integrator checks.
+- Tree/FMM accuracy against direct summation.
+- CUDA fallback parity against CPU paths.
+- Config parsing, provenance, and snapshot I/O.
+- Force-error benchmark smoke runs.
+- Sweep dry-runs.
 - ML dataset/model smoke paths.
 
 CUDA-enabled builds should also be tested on a machine with an actual CUDA

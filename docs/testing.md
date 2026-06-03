@@ -1,63 +1,72 @@
-# Testing and Validation Plan
+# Testing and Validation
 
-## Unit tests
+The validation strategy combines C++ smoke/unit tests, Python tests, benchmark
+smoke runs, and optional CUDA hardware checks. Direct summation is the numerical
+reference for approximate solver validation whenever the particle count is small
+enough for `O(N^2)` work.
 
-Initial C++ unit tests should cover:
+## C++ Tests
 
-- vector arithmetic,
-- particle initialization through generated galaxies,
-- pairwise force symmetry,
-- finite acceleration under softening,
-- leapfrog update consistency,
-- octree Barnes-Hut force agreement against direct summation,
-- `p=4` FMM force agreement against direct summation,
-- CUDA direct solver agreement with the CPU direct solver or CPU fallback,
-- MPI ownership range decomposition,
-- diagnostics sanity,
-- config parsing,
-- snapshot writing.
+The C++ test executable is registered with CTest as `smoke_tests`.
 
-These are covered by `src/cpp/tests/smoke_tests.cpp` and registered with CTest as `smoke_tests`.
-The smoke executable is split into focused source files so failures point to the
-relevant subsystem:
+```bash
+cmake --build build --config Release --target fmm_galaxy_tests
+ctest --test-dir build -C Release --output-on-failure
+```
+
+The smoke executable is split into focused source files:
 
 - `src/cpp/tests/math_direct_tests.cpp`
 - `src/cpp/tests/tree_fmm_accuracy_tests.cpp`
 - `src/cpp/tests/cuda_fallback_tests.cpp`
 - `src/cpp/tests/config_snapshot_tests.cpp`
-- `src/cpp/tests/smoke_tests.cpp` as the shared entrypoint
+- `src/cpp/tests/smoke_tests.cpp`
 
-## Physics sanity tests
+Coverage includes vector arithmetic, generated galaxies, pairwise force
+symmetry, finite softened accelerations, leapfrog consistency, direct/tree/FMM
+agreement, CUDA fallback parity, MPI ownership ranges, diagnostics, config
+parsing, provenance, and snapshot writing.
 
-### Two-body orbit
+## Python Tests
+
+Python tests live under `src/python/tests`.
+
+```bash
+pytest
+```
+
+The project config sets `src` on `pythonpath`, enables strict pytest config and
+marker handling, and reports useful skip/failure summaries.
+
+## Physics Sanity Cases
+
+### Two-Body Orbit
 
 Expected behavior:
 
-- approximately closed orbit for small timestep,
-- bounded energy drift,
-- total momentum conservation.
+- Approximately closed orbit for small timesteps.
+- Bounded energy drift.
+- Total momentum conservation.
 
-### Isolated disk
-
-Expected behavior:
-
-- disk remains coherent for a reasonable number of dynamical times,
-- inner particles are more timestep-sensitive,
-- no immediate numerical explosion under default softening.
-
-### Head-on collision
+### Isolated Disk
 
 Expected behavior:
 
-- symmetric morphology for equal-mass identical disks,
-- conservation diagnostics remain interpretable,
-- close encounter remains stable due to softening.
+- The disk remains coherent for a reasonable number of dynamical times.
+- Inner particles are more timestep-sensitive.
+- Default softening avoids immediate numerical instability.
 
-## Solver validation
+### Head-On Collision
 
-Compare direct sum and approximate solver accelerations.
+Expected behavior:
 
-Metrics:
+- Equal-mass identical disks produce symmetric morphology.
+- Conservation diagnostics remain interpretable.
+- Close encounters remain stable under the configured softening.
+
+## Solver Validation
+
+Approximate solver accelerations are compared against direct summation:
 
 ```text
 relative_error_i = ||a_approx_i - a_direct_i|| / max(||a_direct_i||, tiny)
@@ -67,17 +76,18 @@ p95_relative_error
 max_relative_error
 ```
 
-The standard force-error suite automates this comparison:
+Run the CI-scale force-error benchmark:
 
 ```bash
 python scripts/run_force_error_benchmarks.py --smoke
 ```
 
-The smoke profile is intended for CI-scale validation. The full sweep writes
-CSV, Markdown, and plots under `experiments/accuracy/`, including force RMSE,
-max force error, relative force error, energy drift, momentum drift, angular
-momentum drift, runtime per step, particle-steps per second, and optional peak
-memory when `psutil` is installed.
+The full suite writes CSV, Markdown, and plots under `experiments/accuracy/`.
+Metrics include force RMSE, maximum force error, relative force error, energy
+drift, momentum drift, angular momentum drift, runtime per step,
+particle-steps per second, and optional peak memory when `psutil` is installed.
+
+## Sweep Smoke Tests
 
 Generic config sweeps can be validated without launching simulations:
 
@@ -88,74 +98,113 @@ python scripts/sweep.py --grid configs/sweeps/theta_leaf_order.yaml --dry-run --
 For a small execution smoke test, pass a small grid and `--limit`, then inspect
 `sweep_summary.csv` for completed and failed runs.
 
-ML dataset generation can be smoke-tested from the standard solver-tuning sweep:
+## ML Workflow Smoke Tests
+
+Generate a small solver-tuning dataset:
 
 ```bash
-python scripts/generate_ml_dataset.py --sweep configs/sweeps/ml_solver_dataset.yaml --output experiments/ml_datasets/smoke_solver_tuning.csv --limit 2
+python scripts/generate_ml_dataset.py \
+  --sweep configs/sweeps/ml_solver_dataset.yaml \
+  --output experiments/ml_datasets/smoke_solver_tuning.csv \
+  --limit 2
 ```
 
-Use a `.parquet` output path for the production artifact when `pandas` and
-`pyarrow` are installed.
-
-To validate all ML dataset types, run a slightly larger smoke subset so
-the force-error table has both direct and approximate solver rows:
+Generate all dataset types with a slightly larger subset:
 
 ```bash
-python scripts/generate_ml_dataset.py --sweep configs/sweeps/ml_solver_dataset.yaml --output experiments/ml_datasets/smoke_all --dataset-type all --limit 6
+python scripts/generate_ml_dataset.py \
+  --sweep configs/sweeps/ml_solver_dataset.yaml \
+  --output experiments/ml_datasets/smoke_all \
+  --dataset-type all \
+  --limit 6
 ```
 
-Supervised ML training can be smoke-tested with the generated CSV artifacts:
+Train and evaluate supervised models:
 
 ```bash
-python -m python.ml.train_solver_cost_model --data experiments/ml_datasets/smoke_all/solver_tuning.csv --output experiments/ml_models/smoke_solver_cost_model.pkl
-python -m python.ml.train_force_error_model --data experiments/ml_datasets/smoke_all/force_error.csv --output experiments/ml_models/smoke_force_error_model.pkl
-python -m python.ml.evaluate_models --model experiments/ml_models/smoke_solver_cost_model.pkl --data experiments/ml_datasets/smoke_all/solver_tuning.csv --output experiments/ml_models/smoke_solver_cost_model.eval.md
-python -m python.ml.recommend_config --n-particles 100000 --target-force-rmse 1e-3 --hardware cpu --cost-model experiments/ml_models/smoke_solver_cost_model.pkl --force-model experiments/ml_models/smoke_force_error_model.pkl
+python -m python.ml.train_solver_cost_model \
+  --data experiments/ml_datasets/smoke_all/solver_tuning.csv \
+  --output experiments/ml_models/smoke_solver_cost_model.pkl
+
+python -m python.ml.train_force_error_model \
+  --data experiments/ml_datasets/smoke_all/force_error.csv \
+  --output experiments/ml_models/smoke_force_error_model.pkl
+
+python -m python.ml.evaluate_models \
+  --model experiments/ml_models/smoke_solver_cost_model.pkl \
+  --data experiments/ml_datasets/smoke_all/solver_tuning.csv \
+  --output experiments/ml_models/smoke_solver_cost_model.eval.md
 ```
 
-The adaptive solver-tuning environment and contextual-bandit policy can be
-smoke-tested in cheap mode without launching new simulations:
+Train and evaluate the cheap-mode contextual-bandit policy:
 
 ```bash
-python -m python.ml.rl.train_policy --episodes 30 --n-particles 256 512 --cost-model experiments/ml_models/smoke_solver_cost_model.pkl --force-model experiments/ml_models/smoke_force_error_model.pkl --output experiments/ml_policies/smoke_bandit_policy.pkl
-python -m python.ml.rl.evaluate_policy --policy experiments/ml_policies/smoke_bandit_policy.pkl --n-particles 256 512 --cost-model experiments/ml_models/smoke_solver_cost_model.pkl --force-model experiments/ml_models/smoke_force_error_model.pkl --output experiments/ml_policies/smoke_bandit_eval.md
+python -m python.ml.rl.train_policy \
+  --episodes 30 \
+  --n-particles 256 512 \
+  --cost-model experiments/ml_models/smoke_solver_cost_model.pkl \
+  --force-model experiments/ml_models/smoke_force_error_model.pkl \
+  --output experiments/ml_policies/smoke_bandit_policy.pkl
+
+python -m python.ml.rl.evaluate_policy \
+  --policy experiments/ml_policies/smoke_bandit_policy.pkl \
+  --n-particles 256 512 \
+  --cost-model experiments/ml_models/smoke_solver_cost_model.pkl \
+  --force-model experiments/ml_models/smoke_force_error_model.pkl \
+  --output experiments/ml_policies/smoke_bandit_eval.md
 ```
 
-Learned acceleration-residual correction can be smoke-tested with direct and
-approximate step-0 acceleration dumps:
+Generate and evaluate residual-correction data:
 
 ```bash
-python scripts/generate_residual_dataset.py --smoke --output experiments/ml_datasets/smoke_accel_residuals.csv
-python -m python.ml.train_accel_residual_model --data experiments/ml_datasets/smoke_accel_residuals.csv --output experiments/ml_models/smoke_accel_residual_model.pkl
-python -m python.ml.evaluate_accel_residual_model --model experiments/ml_models/smoke_accel_residual_model.pkl --data experiments/ml_datasets/smoke_accel_residuals.csv --heldout-from-model --stability-steps 3 --output experiments/ml_models/smoke_accel_residual_eval.md
+python scripts/generate_residual_dataset.py \
+  --smoke \
+  --output experiments/ml_datasets/smoke_accel_residuals.csv
+
+python -m python.ml.train_accel_residual_model \
+  --data experiments/ml_datasets/smoke_accel_residuals.csv \
+  --output experiments/ml_models/smoke_accel_residual_model.pkl
+
+python -m python.ml.evaluate_accel_residual_model \
+  --model experiments/ml_models/smoke_accel_residual_model.pkl \
+  --data experiments/ml_datasets/smoke_accel_residuals.csv \
+  --heldout-from-model \
+  --stability-steps 3 \
+  --output experiments/ml_models/smoke_accel_residual_eval.md
 ```
+
+## Solver Crossover Reports
 
 Solver crossover summaries can be regenerated from benchmark artifacts:
 
 ```bash
-python -m python.analysis.solver_crossover --runtime-csv docs/benchmarks/local_cpu_benchmark.csv
+python -m python.analysis.solver_crossover \
+  --runtime-csv docs/benchmarks/local_cpu_benchmark.csv
 ```
 
-When a force-error summary is available, pass it with `--accuracy-csv` to include
-force-error-vs-runtime and target-accuracy tables.
+When a force-error summary is available, pass it with `--accuracy-csv` to
+include force-error-vs-runtime and target-accuracy tables.
 
-## Parallel validation
+## Parallel Validation
 
 Compare serial and MPI outputs using identical seeds/configs.
 
-Expected:
+Expected behavior:
 
-- small floating-point differences are acceptable,
-- statistical diagnostics should match,
-- aggregate mass, momentum, and total particle count should match exactly or within strict tolerance.
+- Small floating-point differences are acceptable.
+- Statistical diagnostics should match.
+- Aggregate mass, momentum, and total particle count should match exactly or
+  within strict tolerance.
 
-## CUDA validation
+## CUDA Validation
 
 Compare CPU and GPU kernels for:
 
-- accelerations,
-- integrated positions,
-- integrated velocities,
-- diagnostics.
+- Accelerations.
+- Integrated positions.
+- Integrated velocities.
+- Diagnostics.
 
-Use tolerance-based tests rather than exact equality.
+CUDA-enabled builds should be validated on a machine with a CUDA compiler and
+device. CPU-only builds validate fallback behavior but do not compile or execute
+the `.cu` kernels.
