@@ -42,7 +42,6 @@ line-length = 100
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
 
 [tool.ruff.lint]
 select = [
@@ -56,6 +55,7 @@ select = [
 [tool.mypy]
 python_version = "3.10"
 files = ["scripts", "src/python"]
+strict = true
 ignore_missing_imports = true
 warn_unreachable = true
 enable_error_code = [
