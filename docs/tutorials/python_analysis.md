@@ -51,7 +51,7 @@ Regenerate the README collision GIF from the dedicated 1000-body config:
 
 ```bash
 ./build/fmm_galaxy_sim --config configs/readme_1000_body_collision.toml
-python scripts/render_readme_snapshot_gif.py --input experiments/validation/readme_1000_body_collision --output docs/assets/galaxy_collision_3d_1000.gif
+python -m python.animation.render_scientific_gif --input experiments/validation/readme_1000_body_collision --output docs/assets/galaxy_collision_3d_1000.gif --mode density
 python -m python.analysis.plot_snapshots --input experiments/validation/readme_1000_body_collision --snapshot experiments/validation/readme_1000_body_collision/snapshot_000149.csv --output docs/assets/readme_snapshot_step149.png --density-output docs/assets/readme_density_step149.png --no-diagnostics
 python scripts/run_benchmarks.py --executable build-readme-gif/fmm_galaxy_sim.exe --particles 250 500 1000 --steps 20 --repetitions 3
 python scripts/run_benchmarks.py --executable build/fmm_galaxy_sim --solvers cuda-tree cuda-fmm --particles 10000 50000 100000 --steps 10 --repetitions 3 --output-format none --expansion-order 0
