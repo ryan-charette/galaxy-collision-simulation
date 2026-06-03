@@ -18,6 +18,10 @@ dependencies = [
 test = [
     "pytest>=8.0",
 ]
+dev = [
+    "nox>=2024.4.15",
+    "pre-commit>=3.7",
+]
 
 [tool.black]
 line-length = 100

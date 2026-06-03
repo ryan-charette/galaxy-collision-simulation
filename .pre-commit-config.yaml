@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: python-compileall
+        name: Python compile check
+        entry: python -m compileall -q scripts python tests
+        language: system
+        pass_filenames: false
+
+      - id: git-diff-check
+        name: Git whitespace/conflict marker check
+        entry: git diff --check --cached
+        language: system
+        pass_filenames: false
