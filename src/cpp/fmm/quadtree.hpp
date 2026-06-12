@@ -12,8 +12,13 @@
 
 namespace fmmgalaxy {
 
+/// @brief Barnes-Hut treecode solver using the shared octree geometry.
+///
+/// The solver approximates far cells using monopole or Cartesian multipole terms depending
+/// on `expansion_order`, and falls back to particle-particle interactions for nearby leaves.
 class BarnesHutSolver {
 public:
+    /// Construct a tree solver with physics and opening-criterion controls.
     BarnesHutSolver(
         PhysicsParams params,
         double theta = 0.6,
@@ -22,7 +27,9 @@ public:
         int expansion_order = 4
     );
 
+    /// Build the tree and update every particle acceleration in place.
     void compute(std::vector<Particle>& particles);
+    /// Build and export flattened tree data for CUDA evaluation paths.
     FlatTreeData build_flat_tree(const std::vector<Particle>& particles);
 
 private:
@@ -55,6 +62,7 @@ private:
     bool contains(const Node& node, const Vec2& position) const;
 };
 
+/// Convenience wrapper that computes Barnes-Hut accelerations for all particles.
 void compute_tree_accelerations(
     std::vector<Particle>& particles,
     const PhysicsParams& params,
@@ -63,6 +71,7 @@ void compute_tree_accelerations(
     int expansion_order = 4
 );
 
+/// Build flattened Barnes-Hut tree data without computing particle accelerations.
 FlatTreeData build_flat_tree(
     const std::vector<Particle>& particles,
     const PhysicsParams& params,

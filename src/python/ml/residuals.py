@@ -45,6 +45,8 @@ RESIDUAL_CATEGORICAL_FEATURES = ["solver"]
 
 @dataclass
 class CorrectionMetrics:
+    """Metrics comparing approximate and residual-corrected accelerations."""
+
     approximate_rmse: float
     corrected_rmse: float
     approximate_mae: float
@@ -93,12 +95,14 @@ class NumpyKnnRegressor:
 
 
 def residual_feature_columns(frame: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """Return available residual-model numeric and categorical feature columns."""
     numeric = [column for column in RESIDUAL_NUMERIC_FEATURES if column in frame.columns]
     categorical = [column for column in RESIDUAL_CATEGORICAL_FEATURES if column in frame.columns]
     return numeric, categorical
 
 
 def finite_residual_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return residual rows with finite direct, approximate, and error accelerations."""
     filtered = frame.copy()
     for column in [*RESIDUAL_TARGETS, "direct_accel_x", "direct_accel_y", "direct_accel_z"]:
         values = pd.to_numeric(filtered[column], errors="coerce")
@@ -112,6 +116,7 @@ def split_by_config(
     seed: int,
     group_column: str = "config_id",
 ) -> tuple[np.ndarray, np.ndarray, list[str], list[str]]:
+    """Split residual rows by configuration group to avoid train/test leakage."""
     if group_column not in frame.columns:
         group_column = "run_id"
     groups = np.asarray(sorted(str(value) for value in frame[group_column].dropna().unique()))
@@ -139,6 +144,7 @@ def split_by_config(
 
 
 def acceleration_matrices(frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return direct acceleration, approximate acceleration, and residual-error matrices."""
     direct = frame[["direct_accel_x", "direct_accel_y", "direct_accel_z"]].to_numpy(dtype=float)
     approx = frame[["approx_accel_x", "approx_accel_y", "approx_accel_z"]].to_numpy(dtype=float)
     error = frame[RESIDUAL_TARGETS].to_numpy(dtype=float)
@@ -150,6 +156,7 @@ def correction_metrics(
     predicted_error: np.ndarray,
     prediction_seconds: float = 0.0,
 ) -> CorrectionMetrics:
+    """Compute one-step residual-correction quality metrics."""
     direct, approx, true_error = acceleration_matrices(frame)
     corrected_error = true_error - predicted_error
     approx_norm = np.linalg.norm(direct - approx, axis=1)
@@ -179,6 +186,7 @@ def correction_metrics(
 
 
 def metrics_dict(metrics: CorrectionMetrics) -> dict[str, Any]:
+    """Convert correction metrics into a JSON/CSV-friendly dictionary."""
     return {
         "rows": metrics.rows,
         "approximate_rmse": metrics.approximate_rmse,
@@ -203,6 +211,7 @@ def correction_markdown_report(
     metrics: CorrectionMetrics,
     stability: dict[str, Any] | None = None,
 ) -> str:
+    """Render residual-correction metrics as a Markdown report."""
     lines = [f"# {title}", "", "## Metadata", ""]
     for key, value in metadata.items():
         lines.append(f"- {key}: `{value}`")

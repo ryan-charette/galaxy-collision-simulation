@@ -14,3 +14,8 @@ dependencies:
   - tomli
   - cmake
   - ninja
+  - doxygen
+  - breathe
+  - furo
+  - myst-parser
+  - sphinx

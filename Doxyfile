@@ -1,0 +1,39 @@
+PROJECT_NAME           = "Galaxy Collision Simulation"
+PROJECT_BRIEF          = "Distributed FMM N-body simulator for galaxy collision experiments"
+OUTPUT_DIRECTORY       = docs/_build/doxygen
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+
+INPUT                  = src/cpp/core \
+                         src/cpp/direct \
+                         src/cpp/fmm \
+                         src/cpp/mpi \
+                         src/cpp/cuda \
+                         src/cpp/io
+FILE_PATTERNS          = *.hpp
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */tests/*
+
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+MULTILINE_CPP_IS_BRIEF = YES
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+OPTIMIZE_OUTPUT_FOR_C  = NO
+
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+
+PREDEFINED             = FMM_GALAXY_HAVE_MPI=0 \
+                         FMM_GALAXY_HAVE_CUDA=0
+QUIET                  = YES

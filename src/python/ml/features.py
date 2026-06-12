@@ -42,6 +42,7 @@ FORCE_CATEGORICAL_FEATURES = ["solver"]
 
 
 def estimate_tree_depth(n_particles: int, leaf_capacity: int) -> int:
+    """Estimate octree depth from particle count and leaf capacity."""
     if n_particles <= leaf_capacity:
         return 1
     ratio = max(n_particles / max(leaf_capacity, 1), 1.0)
@@ -49,12 +50,14 @@ def estimate_tree_depth(n_particles: int, leaf_capacity: int) -> int:
 
 
 def runtime_feature_columns(frame: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """Return available numeric and categorical columns for runtime prediction."""
     numeric = [column for column in RUNTIME_NUMERIC_FEATURES if column in frame.columns]
     categorical = [column for column in RUNTIME_CATEGORICAL_FEATURES if column in frame.columns]
     return numeric, categorical
 
 
 def force_feature_columns(frame: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """Return available numeric and categorical columns for force-error prediction."""
     numeric = [column for column in FORCE_NUMERIC_FEATURES if column in frame.columns]
     categorical = [column for column in FORCE_CATEGORICAL_FEATURES if column in frame.columns]
     return numeric, categorical
@@ -62,6 +65,8 @@ def force_feature_columns(frame: pd.DataFrame) -> tuple[list[str], list[str]]:
 
 @dataclass
 class FeatureTransformer:
+    """Median-impute numeric columns and one-hot encode categorical columns."""
+
     numeric_columns: list[str]
     categorical_columns: list[str]
     numeric_medians: dict[str, float] = field(default_factory=dict)
@@ -69,6 +74,7 @@ class FeatureTransformer:
     feature_names: list[str] = field(default_factory=list)
 
     def fit(self, frame: pd.DataFrame) -> "FeatureTransformer":
+        """Fit numeric medians and categorical vocabularies."""
         self.numeric_medians = {}
         for column in self.numeric_columns:
             values = pd.to_numeric(frame[column], errors="coerce")
@@ -91,6 +97,7 @@ class FeatureTransformer:
         return self
 
     def transform(self, frame: pd.DataFrame) -> np.ndarray:
+        """Transform a dataframe into a numeric feature matrix."""
         numeric_parts = []
         for column in self.numeric_columns:
             values = pd.to_numeric(frame[column], errors="coerce").fillna(self.numeric_medians[column])
@@ -109,16 +116,20 @@ class FeatureTransformer:
 
 @dataclass
 class StandardScaler:
+    """Columnwise standard scaler with dependency-free serialization."""
+
     mean: np.ndarray | None = None
     scale: np.ndarray | None = None
 
     def fit(self, matrix: np.ndarray) -> "StandardScaler":
+        """Fit means and standard deviations."""
         self.mean = matrix.mean(axis=0)
         self.scale = matrix.std(axis=0)
         self.scale[self.scale == 0.0] = 1.0
         return self
 
     def transform(self, matrix: np.ndarray) -> np.ndarray:
+        """Scale a feature matrix using fitted statistics."""
         if self.mean is None or self.scale is None:
             raise RuntimeError("Scaler is not fitted")
         return (matrix - self.mean) / self.scale
@@ -126,10 +137,13 @@ class StandardScaler:
 
 @dataclass
 class NumpyLinearRegressor:
+    """Small ridge-regularized linear regressor implemented with NumPy."""
+
     ridge_alpha: float = 1.0e-6
     coefficients: np.ndarray | None = None
 
     def fit(self, features: np.ndarray, targets: np.ndarray) -> "NumpyLinearRegressor":
+        """Fit linear coefficients for one or more targets."""
         if targets.ndim == 1:
             targets = targets[:, None]
         design = np.column_stack([np.ones(features.shape[0]), features])
@@ -139,6 +153,7 @@ class NumpyLinearRegressor:
         return self
 
     def predict(self, features: np.ndarray) -> np.ndarray:
+        """Predict targets from a feature matrix."""
         if self.coefficients is None:
             raise RuntimeError("Model is not fitted")
         design = np.column_stack([np.ones(features.shape[0]), features])
@@ -147,21 +162,26 @@ class NumpyLinearRegressor:
 
 @dataclass
 class MeanRegressor:
+    """Baseline regressor that always predicts the training target mean."""
+
     mean: np.ndarray | None = None
 
     def fit(self, targets: np.ndarray) -> "MeanRegressor":
+        """Fit the target mean."""
         if targets.ndim == 1:
             targets = targets[:, None]
         self.mean = targets.mean(axis=0)
         return self
 
     def predict(self, count: int) -> np.ndarray:
+        """Return `count` copies of the fitted mean."""
         if self.mean is None:
             raise RuntimeError("Baseline is not fitted")
         return np.tile(self.mean, (count, 1))
 
 
 def make_regressor(model_type: str, random_state: int) -> Any:
+    """Construct a supported regression model by name."""
     if model_type == "linear":
         return NumpyLinearRegressor()
 
@@ -182,6 +202,7 @@ def make_regressor(model_type: str, random_state: int) -> Any:
 
 
 def predict_bundle(bundle: dict[str, Any], frame: pd.DataFrame) -> np.ndarray:
+    """Run feature transformation, scaling, and prediction for a saved model bundle."""
     transformer: FeatureTransformer = bundle["feature_transformer"]
     scaler: StandardScaler = bundle["feature_scaler"]
     features = scaler.transform(transformer.transform(frame))

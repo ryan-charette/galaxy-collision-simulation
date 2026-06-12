@@ -50,6 +50,8 @@ except ImportError:  # pragma: no cover - exercised when Gymnasium is unavailabl
 
 @dataclass(frozen=True)
 class SolverAction:
+    """One solver/configuration action available to the tuning environment."""
+
     solver: str
     tree_theta: float
     tree_leaf_capacity: int
@@ -60,6 +62,8 @@ class SolverAction:
 
 @dataclass
 class RewardWeights:
+    """Weights used to combine runtime, accuracy, and conservation penalties."""
+
     runtime: float = 1.0
     force_error: float = 100.0
     energy_drift: float = 10.0
@@ -94,6 +98,7 @@ SOLVER_TO_INDEX = {
 
 
 def default_actions(hardware: str = "cpu") -> list[SolverAction]:
+    """Return the default discrete solver-action grid for CPU or CUDA hardware."""
     solvers = ["direct", "tree", "fmm"]
     if hardware == "cuda":
         solvers.extend(["cuda-tree", "cuda-fmm"])
@@ -111,6 +116,7 @@ def default_actions(hardware: str = "cpu") -> list[SolverAction]:
 
 
 def observation_from_context(context: dict[str, Any]) -> np.ndarray:
+    """Convert a solver-tuning context dictionary into an observation vector."""
     return np.asarray([float(context.get(key, 0.0)) for key in OBSERVATION_KEYS], dtype=np.float32)
 
 
@@ -122,6 +128,7 @@ def default_contexts(
     hardware: str,
     output_format: str,
 ) -> list[dict[str, Any]]:
+    """Create deterministic starter contexts for solver-tuning experiments."""
     contexts = []
     for count in n_particles:
         bounding_box = 2.0
@@ -153,6 +160,7 @@ def default_contexts(
 
 
 def action_frame(context: dict[str, Any], action: SolverAction) -> pd.DataFrame:
+    """Represent one context/action pair as model-feature dataframe rows."""
     row = {
         "solver": action.solver,
         "n_particles": int(context["n_particles"]),
@@ -176,6 +184,7 @@ def action_frame(context: dict[str, Any], action: SolverAction) -> pd.DataFrame:
 
 
 def diagnostic_drifts(output_dir: Path) -> tuple[float, float]:
+    """Compute final relative energy and momentum drift from a diagnostics file."""
     rows = []
     path = output_dir / "diagnostics.csv"
     if not path.exists():
@@ -266,6 +275,7 @@ class GalaxySolverEnv(gym.Env if gym is not None else _Env):
         seed: int | None = None,
         options: dict[str, Any] | None = None,
     ) -> tuple[np.ndarray, dict[str, Any]]:
+        """Start a one-step episode and return the initial observation."""
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         if options and "context" in options:
@@ -277,6 +287,7 @@ class GalaxySolverEnv(gym.Env if gym is not None else _Env):
         return self.current_observation.copy(), {"context": context}
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+        """Evaluate one solver action and return a terminated Gymnasium step tuple."""
         if self.current_context is None or self.current_observation is None:
             self.reset()
         assert self.current_context is not None

@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 
 def write_csv_rows(path: str | Path, rows: Iterable[dict[str, Any]], fieldnames: list[str]) -> None:
+    """Write dictionaries to a CSV file, creating parent directories as needed."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -17,6 +18,7 @@ def write_csv_rows(path: str | Path, rows: Iterable[dict[str, Any]], fieldnames:
 
 
 def write_table(path: str | Path, rows: list[dict[str, Any]], columns: list[str]) -> None:
+    """Write rows to CSV or Parquet based on the output suffix."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix.lower() == ".parquet":
@@ -35,6 +37,7 @@ def write_table(path: str | Path, rows: list[dict[str, Any]], columns: list[str]
 
 
 def markdown_table(headers: list[str], rows: Iterable[Iterable[Any]]) -> list[str]:
+    """Return a GitHub-flavored Markdown table as a list of lines."""
     lines = [
         "| " + " | ".join(headers) + " |",
         "| " + " | ".join("---" for _ in headers) + " |",

@@ -10,6 +10,7 @@ import pandas as pd
 
 
 def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, targets: list[str]) -> dict[str, dict[str, float]]:
+    """Compute MAE, RMSE, and R2 for each regression target."""
     if y_true.ndim == 1:
         y_true = y_true[:, None]
     if y_pred.ndim == 1:
@@ -27,6 +28,7 @@ def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, targets: list[str
 
 
 def baseline_metrics(y_true: np.ndarray, y_baseline: np.ndarray, targets: list[str]) -> dict[str, dict[str, float]]:
+    """Compute the same regression metrics for a baseline predictor."""
     return regression_metrics(y_true, y_baseline, targets)
 
 
@@ -34,6 +36,7 @@ def model_beats_baseline(
     model_metrics: dict[str, dict[str, float]],
     baseline: dict[str, dict[str, float]],
 ) -> dict[str, bool]:
+    """Return whether model RMSE is lower than baseline RMSE for each target."""
     return {
         target: model_metrics[target]["rmse"] < baseline[target]["rmse"]
         for target in model_metrics
@@ -46,6 +49,7 @@ def solver_selection_accuracy(
     targets: list[str],
     objective: str,
 ) -> float | None:
+    """Estimate how often predicted costs choose the true best solver within config groups."""
     if objective not in targets or "solver" not in frame.columns:
         return None
 
@@ -92,6 +96,7 @@ def markdown_report(
     beats_baseline: dict[str, bool],
     selection_accuracy: float | None,
 ) -> str:
+    """Render model metrics and metadata as a Markdown report."""
     lines = [
         f"# {title}",
         "",

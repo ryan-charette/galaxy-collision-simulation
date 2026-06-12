@@ -18,6 +18,7 @@ architecture
 testing
 tutorials/index
 benchmarks/index
+api/index
 ```
 
 ```{toctree}
@@ -64,5 +65,9 @@ Build these docs:
 ```bash
 nox -s docs
 ```
+
+The documentation build requires Doxygen for the generated C++ API reference.
+If Doxygen is not on `PATH`, set `DOXYGEN_EXECUTABLE` to the `doxygen`
+binary before running Sphinx or `nox -s docs`.
 
 The generated HTML is written to `docs/_build/html`.

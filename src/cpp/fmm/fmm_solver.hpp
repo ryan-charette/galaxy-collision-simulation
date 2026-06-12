@@ -11,28 +11,47 @@
 
 namespace fmmgalaxy {
 
+/// Public configuration knobs for the FMM solver.
 struct FmmOptions {
+    /// Opening angle used when building far/near interaction lists.
     double theta{0.6};
+    /// Maximum particle count in a leaf node before subdivision.
     std::size_t leaf_capacity{16};
+    /// Maximum tree subdivision depth.
     int max_depth{32};
+    /// Cartesian expansion order; supported values are normalized to implemented orders.
     int expansion_order{4};
 };
 
+/// Runtime counters describing the most recent FMM tree and interaction lists.
 struct FmmStats {
+    /// Number of tree nodes.
     std::size_t node_count{0};
+    /// Number of leaf nodes.
     std::size_t leaf_count{0};
+    /// Number of accepted far-cell interactions.
     std::size_t far_interactions{0};
+    /// Number of near-cell or near-leaf interactions.
     std::size_t near_interactions{0};
 };
 
+/// @brief Fast multipole solver for softened gravitational acceleration.
+///
+/// The implementation builds an octree, constructs Cartesian multipole moments, propagates
+/// local expansions, and evaluates near interactions by direct particle-particle summation.
 class FastMultipoleSolver {
 public:
+    /// Construct an FMM solver with physics and algorithm options.
     FastMultipoleSolver(PhysicsParams params, FmmOptions options = {});
 
+    /// Build the FMM hierarchy and update every particle acceleration.
     void compute(std::vector<Particle>& particles);
+    /// Compute accelerations for targets in the half-open range `[begin, end)`.
     void compute_targets(std::vector<Particle>& particles, std::size_t begin, std::size_t end);
+    /// Build and export flattened FMM interaction data for CUDA evaluation paths.
     FlatFmmData build_flat_fmm(const std::vector<Particle>& particles);
 
+    /// Return counters from the most recent FMM build/evaluation.
     const FmmStats& stats() const { return stats_; }
 
 private:
@@ -77,12 +96,14 @@ private:
     bool well_separated(const Node& target, const Node& source) const;
 };
 
+/// Convenience wrapper that computes FMM accelerations for all particles.
 void compute_fmm_accelerations(
     std::vector<Particle>& particles,
     const PhysicsParams& params,
     FmmOptions options = {}
 );
 
+/// Convenience wrapper that computes FMM accelerations for a target range.
 void compute_fmm_accelerations_for_targets(
     std::vector<Particle>& particles,
     const PhysicsParams& params,
@@ -91,6 +112,7 @@ void compute_fmm_accelerations_for_targets(
     FmmOptions options = {}
 );
 
+/// Build flattened FMM data without computing particle accelerations.
 FlatFmmData build_flat_fmm(
     const std::vector<Particle>& particles,
     const PhysicsParams& params,

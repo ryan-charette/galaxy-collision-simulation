@@ -16,11 +16,14 @@ from python.ml import DATASET_SCHEMA_VERSION
 
 @dataclass(frozen=True)
 class Split:
+    """Train/test index split for tabular ML datasets."""
+
     train_indices: np.ndarray
     test_indices: np.ndarray
 
 
 def load_dataset(path: str | Path) -> pd.DataFrame:
+    """Load a CSV or Parquet dataset and validate its schema version when present."""
     path = Path(path)
     if path.suffix.lower() == ".parquet":
         try:
@@ -38,18 +41,21 @@ def load_dataset(path: str | Path) -> pd.DataFrame:
 
 
 def require_columns(frame: pd.DataFrame, columns: Iterable[str]) -> None:
+    """Raise `ValueError` if a dataframe is missing required columns."""
     missing = [column for column in columns if column not in frame.columns]
     if missing:
         raise ValueError(f"Dataset is missing required columns: {', '.join(missing)}")
 
 
 def completed_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return only completed sweep rows when a status column is present."""
     if "status" not in frame.columns:
         return frame.copy()
     return frame[frame["status"] == "completed"].copy()
 
 
 def finite_target_rows(frame: pd.DataFrame, targets: list[str]) -> pd.DataFrame:
+    """Return rows whose target columns are numeric and finite."""
     require_columns(frame, targets)
     filtered = frame.copy()
     for target in targets:
@@ -59,6 +65,7 @@ def finite_target_rows(frame: pd.DataFrame, targets: list[str]) -> pd.DataFrame:
 
 
 def train_test_split_indices(count: int, test_fraction: float, seed: int) -> Split:
+    """Create a reproducible random train/test split over row indices."""
     if count <= 0:
         raise ValueError("Cannot split an empty dataset")
     if count == 1:
@@ -75,6 +82,7 @@ def train_test_split_indices(count: int, test_fraction: float, seed: int) -> Spl
 
 
 def numeric_matrix(frame: pd.DataFrame, targets: list[str]) -> np.ndarray:
+    """Convert target columns to a finite floating-point matrix."""
     require_columns(frame, targets)
     columns = [pd.to_numeric(frame[target], errors="coerce").to_numpy(dtype=float) for target in targets]
     matrix = np.column_stack(columns)
@@ -84,12 +92,14 @@ def numeric_matrix(frame: pd.DataFrame, targets: list[str]) -> np.ndarray:
 
 
 def write_json(path: str | Path, payload: dict[str, Any]) -> None:
+    """Write a JSON artifact with stable indentation."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def save_model_bundle(path: str | Path, bundle: dict[str, Any]) -> None:
+    """Serialize a model bundle with pickle."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as handle:
@@ -97,6 +107,7 @@ def save_model_bundle(path: str | Path, bundle: dict[str, Any]) -> None:
 
 
 def load_model_bundle(path: str | Path) -> dict[str, Any]:
+    """Load a model bundle and validate its dataset schema version."""
     path = Path(path)
     with path.open("rb") as handle:
         bundle = pickle.load(handle)

@@ -29,6 +29,7 @@ coverage = [
     "pytest-cov>=6.0",
 ]
 docs = [
+    "breathe>=4.36",
     "furo>=2024.8.6",
     "myst-parser>=4.0",
     "sphinx>=8.1",
@@ -48,6 +49,7 @@ coverage = [
     "pytest-cov>=6.0",
 ]
 docs = [
+    "breathe>=4.36",
     "furo>=2024.8.6",
     "myst-parser>=4.0",
     "sphinx>=8.1",
