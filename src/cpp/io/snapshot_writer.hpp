@@ -28,7 +28,7 @@ public:
     );
     /// Write one particle snapshot at a simulation step/time.
     void write_snapshot(int step, double time, const std::vector<Particle>& particles);
-    /// Write one acceleration dump for direct-vs-approximate residual datasets.
+    /// Write one acceleration dump for direct-vs-approximate force diagnostics.
     void write_accelerations(int step, double time, const std::vector<Particle>& particles);
     /// Append one diagnostics row.
     void write_diagnostics(int step, double time, const Diagnostics& diagnostics, std::size_t particle_count);

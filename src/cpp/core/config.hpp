@@ -32,7 +32,7 @@ struct OutputConfig {
     std::filesystem::path directory{"experiments/validation/smoke_test"};
     /// Snapshot file format.
     OutputFormat format{OutputFormat::Csv};
-    /// Whether to write per-step acceleration dumps for residual/error datasets.
+    /// Whether to write per-step acceleration dumps for force diagnostics.
     bool acceleration_dump{false};
 };
 

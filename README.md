@@ -74,7 +74,6 @@ src/cpp/io/         CSV/Parquet snapshot, diagnostics, JSON, and conversion help
 src/cpp/tests/      C++ smoke/unit tests
 src/python/utils/   snapshot and diagnostics loaders
 src/python/analysis/ static plots and solver-crossover reports
-src/python/ml/      dataset utilities, supervised models, and RL environment helpers
 src/python/animation/ MP4/GIF rendering
 configs/        simulation configs
 experiments/    output destinations and experiment notes

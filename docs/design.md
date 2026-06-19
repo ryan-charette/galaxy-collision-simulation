@@ -3,8 +3,8 @@
 This project is a 3D softened-gravity N-body simulator for galaxy collision
 experiments. The C++ engine provides direct, Barnes-Hut tree, FMM, MPI, and
 optional CUDA execution paths. Python tooling covers reproducible experiment
-runs, benchmark sweeps, snapshot loading, plotting, animation, ML-ready dataset
-generation, and baseline solver-selection models.
+runs, benchmark sweeps, snapshot loading, plotting, animation, and benchmark
+analysis.
 
 The design favors reproducibility and comparison across solvers. Direct
 summation remains the correctness baseline. Approximate and accelerated solvers
@@ -134,7 +134,7 @@ Parquet conversion is handled by `python.utils.parquet_io`. Set
 interpreter.
 
 Diagnostics are written as CSV when output is enabled. Acceleration dumps can be
-enabled for direct-vs-approximate residual datasets.
+enabled for direct-vs-approximate force diagnostics.
 
 ## Experiment Tooling
 
@@ -148,10 +148,10 @@ The Python runtime utilities provide shared helpers for:
 - Metadata and diagnostics loading.
 - Resume behavior for sweep runs.
 
-These helpers are used by sweeps, benchmarks, force-error comparisons, residual
-dataset generation, and the real-mode ML environment.
+These helpers are used by sweeps, benchmarks, force-error comparisons, README
+artifact generation, and plotting workflows.
 
-## Benchmarking and ML Data
+## Benchmarking
 
 Benchmarking emphasizes both speed and accuracy:
 
@@ -160,11 +160,6 @@ Benchmarking emphasizes both speed and accuracy:
 - Force RMSE and relative force error against direct summation.
 - Energy, momentum, and angular momentum drift.
 - Optional memory usage.
-
-ML dataset generation consumes sweep outputs and produces versioned, tabular
-datasets for solver tuning, force-error modeling, per-step diagnostics, and
-acceleration residual correction. Model artifacts include training metadata and
-remain traceable to run metadata and dataset schema versions.
 
 ## Validation
 
@@ -176,7 +171,6 @@ Validation is split across focused C++ tests and Python smoke commands:
 - Config parsing, provenance, and snapshot I/O.
 - Force-error benchmark smoke runs.
 - Sweep dry-runs.
-- ML dataset/model smoke paths.
 
 CUDA-enabled builds should also be tested on a machine with an actual CUDA
 toolchain and device, because CPU-only builds validate fallback behavior but do

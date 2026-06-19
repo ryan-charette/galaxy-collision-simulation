@@ -7,8 +7,6 @@ dependencies:
   - matplotlib
   - pandas
   - pyarrow
-  - scikit-learn
-  - gymnasium
   - pytest
   - pyyaml
   - tomli

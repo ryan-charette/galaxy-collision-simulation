@@ -95,59 +95,6 @@ directories, `sweep_summary.csv`, optional `sweep_summary.parquet`, and
 `--resume` to skip completed runs with metadata, and `--jobs N` for local
 parallel execution.
 
-## ML Dataset and Model Workflows
-
-Generate an ML-ready solver-tuning dataset from a sweep:
-
-```bash
-python scripts/generate_ml_dataset.py \
-  --sweep configs/sweeps/ml_solver_dataset.yaml \
-  --output experiments/ml_datasets/solver_tuning.parquet
-```
-
-The dataset generator writes one row per run with solver settings, provenance,
-hardware/build metadata, wall-clock timing, particle-steps/s, and
-energy/momentum drift fields. Use `--limit N` for a smoke subset and `--resume`
-to reuse completed run directories.
-
-Pass `--dataset-type force_error`, `--dataset-type per_step_diagnostics`, or
-`--dataset-type all` to materialize the other ML dataset types from the same
-sweep outputs. Stable schemas are documented in `docs/ml_datasets.md`.
-
-Train baseline supervised solver models from the ML datasets:
-
-```bash
-python -m python.ml.train_solver_cost_model --data experiments/ml_datasets/solver_tuning.parquet --output experiments/ml_models/solver_cost_model.pkl
-python -m python.ml.train_force_error_model --data experiments/ml_datasets/force_error.parquet --output experiments/ml_models/force_error_model.pkl
-python -m python.ml.recommend_config --n-particles 100000 --target-force-rmse 1e-3 --hardware cpu
-```
-
-Model training and recommendation workflows are documented in
-`docs/ml_models.md`.
-
-Train and evaluate the first adaptive solver-tuning policy:
-
-```bash
-python -m python.ml.rl.train_policy --episodes 200 --cost-model experiments/ml_models/solver_cost_model.pkl --force-model experiments/ml_models/force_error_model.pkl --output experiments/ml_policies/solver_bandit_policy.pkl
-python -m python.ml.rl.evaluate_policy --policy experiments/ml_policies/solver_bandit_policy.pkl --cost-model experiments/ml_models/solver_cost_model.pkl --force-model experiments/ml_models/force_error_model.pkl --output experiments/ml_policies/solver_bandit_eval.md
-```
-
-The adaptive solver-tuning environment starts as a contextual bandit and
-supports both supervised-model `cheap` mode and simulator-launching `real` mode.
-Details are in `docs/rl_environment.md`.
-
-Generate, train, and evaluate a learned acceleration-residual correction model:
-
-```bash
-python scripts/generate_residual_dataset.py --output experiments/ml_datasets/accel_residuals.csv
-python -m python.ml.train_accel_residual_model --data experiments/ml_datasets/accel_residuals.csv --output experiments/ml_models/accel_residual_model.pkl
-python -m python.ml.evaluate_accel_residual_model --model experiments/ml_models/accel_residual_model.pkl --data experiments/ml_datasets/accel_residuals.csv --heldout-from-model --stability-steps 5 --output experiments/ml_models/accel_residual_eval.md
-```
-
-This workflow predicts direct-minus-approximate acceleration residuals and
-reports whether corrected one-step forces improve on held-out solver configs.
-Details are in `docs/error_correction.md`.
-
 ## Solver Crossover Analysis
 
 Generate solver crossover plots and tables from runtime and accuracy benchmark

@@ -16,7 +16,7 @@ Python executable for conversion.
 
 Acceleration dumps are lightweight CSV files with particle ids, positions,
 velocities, masses, and computed accelerations. They are intended for
-direct-vs-approximate residual datasets and can be written even when
+direct-vs-approximate force diagnostics and can be written even when
 `[output] format = "none"` disables snapshots and diagnostics.
 
 `metadata.json` is always written, including for `format = "none"`. It captures

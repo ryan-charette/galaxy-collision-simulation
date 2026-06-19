@@ -1,7 +1,7 @@
 # Architecture
 
 The repository is organized around a compiled C++ simulation engine and Python
-tools for experiments, analysis, visualization, and machine-learning workflows.
+tools for experiments, analysis, visualization, and benchmark workflows.
 
 ```text
                 +------------------------------+
@@ -82,10 +82,6 @@ tools for experiments, analysis, visualization, and machine-learning workflows.
 `src/python/animation`
 : MP4/GIF rendering utilities for simulation snapshots.
 
-`src/python/ml`
-: Dataset schemas, supervised model training/evaluation, recommendation tools,
-  residual error-correction models, and adaptive solver-tuning environments.
-
 ## Scripts
 
 The `scripts/` directory contains command-line entry points for repeatable
@@ -94,8 +90,6 @@ developer and experiment workflows:
 - `run_benchmarks.py`
 - `run_force_error_benchmarks.py`
 - `sweep.py`
-- `generate_ml_dataset.py`
-- `generate_residual_dataset.py`
 - README artifact rendering helpers
 
 These scripts use shared Python runtime helpers so simulator discovery, config
@@ -122,5 +116,4 @@ the available CPU fallback paths.
 3. The selected solver computes accelerations.
 4. The leapfrog integrator advances positions and velocities.
 5. The rank responsible for output writes metadata, diagnostics, and snapshots.
-6. Python tools load those artifacts for benchmarks, plots, datasets, and
-   animations.
+6. Python tools load those artifacts for benchmarks, plots, and animations.

@@ -1,13 +1,12 @@
 # Galaxy Collision Simulation Documentation
 
 This documentation covers the C++/CUDA galaxy collision simulator, Python
-analysis tools, benchmark workflow, and machine-learning support utilities.
+analysis tools, benchmark workflow, and visualization utilities.
 
 The simulator models softened Newtonian gravity for galaxy collision
 experiments. It includes direct summation, Barnes-Hut treecode, FMM, MPI, and
 optional CUDA execution paths. Python tools provide reproducible experiment
-runners, snapshot loading, plotting, animation, benchmark analysis, ML dataset
-generation, baseline supervised models, and adaptive solver tuning utilities.
+runners, snapshot loading, plotting, animation, and benchmark analysis.
 
 ```{toctree}
 :maxdepth: 2
@@ -19,16 +18,6 @@ testing
 tutorials/index
 benchmarks/index
 api/index
-```
-
-```{toctree}
-:maxdepth: 2
-:caption: Machine Learning
-
-ml_datasets
-ml_models
-rl_environment
-error_correction
 ```
 
 ```{toctree}

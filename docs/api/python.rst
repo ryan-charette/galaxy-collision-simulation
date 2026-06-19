@@ -1,7 +1,7 @@
 Python API Reference
 ====================
 
-The Python reference documents the importable analysis, I/O, dataset, and ML
+The Python reference documents the importable analysis, I/O, and rendering
 helpers under ``src/python``.
 
 Snapshot and Table Utilities
@@ -20,39 +20,24 @@ Snapshot and Table Utilities
    :members:
    :undoc-members:
 
-Machine-Learning Data Helpers
------------------------------
+Analysis Helpers
+----------------
 
-.. automodule:: python.ml.schemas
+.. automodule:: python.analysis.plot_snapshots
    :members:
    :undoc-members:
 
-.. automodule:: python.ml.datasets
+.. automodule:: python.analysis.solver_crossover
    :members:
    :undoc-members:
 
-.. automodule:: python.ml.features
-   :members:
-   :undoc-members:
-   :show-inheritance:
+Rendering Helpers
+-----------------
 
-.. automodule:: python.ml.evaluation
-   :members:
-   :undoc-members:
-
-.. automodule:: python.ml.residuals
+.. automodule:: python.animation.render_snapshots
    :members:
    :undoc-members:
 
-Reinforcement-Learning Helpers
-------------------------------
-
-.. automodule:: python.ml.envs.galaxy_solver_env
+.. automodule:: python.animation.render_scientific_gif
    :members:
    :undoc-members:
-   :show-inheritance:
-
-.. automodule:: python.ml.rl.baselines
-   :members:
-   :undoc-members:
-   :show-inheritance:
