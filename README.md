@@ -103,6 +103,15 @@ On Windows PowerShell, if CMake is installed:
 - [Run a simulation](docs/tutorials/run_simulation.md)
 - [Python analysis and experiment workflows](docs/tutorials/python_analysis.md)
 
+## Community
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Citation metadata](CITATION.cff)
+- [Security policy](SECURITY.md)
+- [Support guidance](SUPPORT.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Changelog](CHANGELOG.md)
+
 ## References
 
 - Ying, L. (2012). [A pedestrian introduction to fast multipole methods](https://web.stanford.edu/~lexing/pfmm.pdf).
