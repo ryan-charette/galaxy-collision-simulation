@@ -1,0 +1,31 @@
+name: Validation or accuracy report
+description: Report solver accuracy, conservation, or benchmark validation results.
+title: "[Validation]: "
+labels: ["validation"]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario
+      description: Describe the physical setup, config, solver, and particle count.
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Metrics
+      description: Include force error, energy drift, momentum drift, runtime, memory, or other relevant values.
+    validations:
+      required: true
+  - type: textarea
+    id: methodology
+    attributes:
+      label: Methodology
+      description: Include commands, repetitions, hardware, compiler, and whether timings include I/O.
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: Data or plots
+      description: Link to CSVs, diagnostics, plots, logs, or metadata.

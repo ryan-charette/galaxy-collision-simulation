@@ -7,20 +7,22 @@ enough for `O(N^2)` work.
 
 ## C++ Tests
 
-The C++ test executable is registered with CTest as `smoke_tests`.
+The C++ tests use Catch2 and are registered with CTest. CMake first looks for
+an installed Catch2 3 package. If it is not installed, pass
+`-DFMM_GALAXY_FETCH_TEST_DEPS=ON` to let CMake download the test dependency.
 
 ```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFMM_GALAXY_FETCH_TEST_DEPS=ON
 cmake --build build --config Release --target fmm_galaxy_tests
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The smoke executable is split into focused source files:
+The Catch2 test target is split into focused source files:
 
 - `src/cpp/tests/math_direct_tests.cpp`
 - `src/cpp/tests/tree_fmm_accuracy_tests.cpp`
 - `src/cpp/tests/cuda_fallback_tests.cpp`
 - `src/cpp/tests/config_snapshot_tests.cpp`
-- `src/cpp/tests/smoke_tests.cpp`
 
 Coverage includes vector arithmetic, generated galaxies, pairwise force
 symmetry, finite softened accelerations, leapfrog consistency, direct/tree/FMM
@@ -59,6 +61,7 @@ cmake -S . -B build-coverage \
   -DCMAKE_BUILD_TYPE=Debug \
   -DENABLE_MPI=OFF \
   -DENABLE_CUDA=OFF \
+  -DFMM_GALAXY_FETCH_TEST_DEPS=ON \
   -DCMAKE_CXX_FLAGS="--coverage -O0 -g" \
   -DCMAKE_EXE_LINKER_FLAGS="--coverage"
 
@@ -127,81 +130,6 @@ python scripts/sweep.py --grid configs/sweeps/theta_leaf_order.yaml --dry-run --
 
 For a small execution smoke test, pass a small grid and `--limit`, then inspect
 `sweep_summary.csv` for completed and failed runs.
-
-## ML Workflow Smoke Tests
-
-Generate a small solver-tuning dataset:
-
-```bash
-python scripts/generate_ml_dataset.py \
-  --sweep configs/sweeps/ml_solver_dataset.yaml \
-  --output experiments/ml_datasets/smoke_solver_tuning.csv \
-  --limit 2
-```
-
-Generate all dataset types with a slightly larger subset:
-
-```bash
-python scripts/generate_ml_dataset.py \
-  --sweep configs/sweeps/ml_solver_dataset.yaml \
-  --output experiments/ml_datasets/smoke_all \
-  --dataset-type all \
-  --limit 6
-```
-
-Train and evaluate supervised models:
-
-```bash
-python -m python.ml.train_solver_cost_model \
-  --data experiments/ml_datasets/smoke_all/solver_tuning.csv \
-  --output experiments/ml_models/smoke_solver_cost_model.pkl
-
-python -m python.ml.train_force_error_model \
-  --data experiments/ml_datasets/smoke_all/force_error.csv \
-  --output experiments/ml_models/smoke_force_error_model.pkl
-
-python -m python.ml.evaluate_models \
-  --model experiments/ml_models/smoke_solver_cost_model.pkl \
-  --data experiments/ml_datasets/smoke_all/solver_tuning.csv \
-  --output experiments/ml_models/smoke_solver_cost_model.eval.md
-```
-
-Train and evaluate the cheap-mode contextual-bandit policy:
-
-```bash
-python -m python.ml.rl.train_policy \
-  --episodes 30 \
-  --n-particles 256 512 \
-  --cost-model experiments/ml_models/smoke_solver_cost_model.pkl \
-  --force-model experiments/ml_models/smoke_force_error_model.pkl \
-  --output experiments/ml_policies/smoke_bandit_policy.pkl
-
-python -m python.ml.rl.evaluate_policy \
-  --policy experiments/ml_policies/smoke_bandit_policy.pkl \
-  --n-particles 256 512 \
-  --cost-model experiments/ml_models/smoke_solver_cost_model.pkl \
-  --force-model experiments/ml_models/smoke_force_error_model.pkl \
-  --output experiments/ml_policies/smoke_bandit_eval.md
-```
-
-Generate and evaluate residual-correction data:
-
-```bash
-python scripts/generate_residual_dataset.py \
-  --smoke \
-  --output experiments/ml_datasets/smoke_accel_residuals.csv
-
-python -m python.ml.train_accel_residual_model \
-  --data experiments/ml_datasets/smoke_accel_residuals.csv \
-  --output experiments/ml_models/smoke_accel_residual_model.pkl
-
-python -m python.ml.evaluate_accel_residual_model \
-  --model experiments/ml_models/smoke_accel_residual_model.pkl \
-  --data experiments/ml_datasets/smoke_accel_residuals.csv \
-  --heldout-from-model \
-  --stability-steps 3 \
-  --output experiments/ml_models/smoke_accel_residual_eval.md
-```
 
 ## Solver Crossover Reports
 

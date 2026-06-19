@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software in research, please cite it using this metadata."
+type: software
+title: "Distributed Fast Multipole Galaxy Collision Simulator"
+authors:
+  - family-names: Charette
+    given-names: Ryan
+repository-code: "https://github.com/ryan-charette/galaxy-collision-simulation"
+url: "https://github.com/ryan-charette/galaxy-collision-simulation"
+license: MIT
+version: "0.1.0"
+keywords:
+  - n-body
+  - fast multipole method
+  - Barnes-Hut
+  - galaxy collision
+  - scientific computing
+abstract: "A compact C++/CUDA gravitational N-body simulator for galaxy collision experiments with direct, Barnes-Hut, FMM, MPI, and Python analysis tooling."

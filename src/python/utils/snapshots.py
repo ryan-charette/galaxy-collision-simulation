@@ -12,6 +12,8 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class Snapshot:
+    """One simulator snapshot loaded from CSV, Parquet, or acceleration dumps."""
+
     step: int
     time: float
     ids: np.ndarray

@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a scoped simulator, analysis, documentation, or workflow improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What scientific, workflow, or maintenance problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the requested behavior or interface.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: How should this be tested or benchmarked?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

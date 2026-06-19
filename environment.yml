@@ -7,10 +7,13 @@ dependencies:
   - matplotlib
   - pandas
   - pyarrow
-  - scikit-learn
-  - gymnasium
   - pytest
   - pyyaml
   - tomli
   - cmake
   - ninja
+  - doxygen
+  - breathe
+  - furo
+  - myst-parser
+  - sphinx

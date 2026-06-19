@@ -25,8 +25,7 @@ written even when `[output] format = "none"` disables snapshots and diagnostics.
 
 ## Snapshot Format
 
-For larger analysis or ML-oriented datasets, switch the snapshot format to
-Parquet:
+For larger analysis workflows, switch the snapshot format to Parquet:
 
 ```toml
 [output]

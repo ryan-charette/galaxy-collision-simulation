@@ -49,12 +49,6 @@ experiments/accuracy_*/
 experiments/benchmarks/
 experiments/crossover/
 experiments/crossover_*/
-experiments/error_correction/
-experiments/ml_datasets/
-experiments/ml_models/
-experiments/ml_policies/
-experiments/ml_sweeps/
-experiments/rl_env*/
 experiments/sweeps/
 experiments/**/snapshots/
 experiments/**/snapshot_*.csv
