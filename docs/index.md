@@ -14,6 +14,7 @@ runners, snapshot loading, plotting, animation, and benchmark analysis.
 
 design
 architecture
+install
 testing
 tutorials/index
 benchmarks/index

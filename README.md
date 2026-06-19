@@ -91,6 +91,18 @@ ctest --test-dir build --output-on-failure
 
 If MPI or CUDA are not installed, CMake falls back to the serial CPU build.
 
+Install the C++ simulator, headers, configs, and CMake package metadata:
+
+```bash
+cmake --install build --prefix install
+```
+
+Install the Python analysis and rendering commands:
+
+```bash
+python -m pip install .
+```
+
 On Windows PowerShell, if CMake is installed:
 
 ```powershell
@@ -100,6 +112,7 @@ On Windows PowerShell, if CMake is installed:
 
 ## Tutorials
 
+- [Installation](docs/install.md)
 - [Run a simulation](docs/tutorials/run_simulation.md)
 - [Python analysis and experiment workflows](docs/tutorials/python_analysis.md)
 

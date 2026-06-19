@@ -2,7 +2,21 @@
 name = "fmm-galaxy-tools"
 version = "0.1.0"
 description = "Python analysis and animation tools for the distributed FMM galaxy simulator"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Ryan Charette" },
+]
 requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "numpy>=1.26",
     "matplotlib>=3.8",
@@ -12,6 +26,24 @@ dependencies = [
     "pyyaml>=6.0",
     "tomli>=2.0; python_version < '3.11'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ryan-charette/galaxy-collision-simulation"
+Repository = "https://github.com/ryan-charette/galaxy-collision-simulation"
+Issues = "https://github.com/ryan-charette/galaxy-collision-simulation/issues"
+Documentation = "https://github.com/ryan-charette/galaxy-collision-simulation/tree/main/docs"
+
+[project.scripts]
+fmm-galaxy-benchmark = "scripts.run_benchmarks:main"
+fmm-galaxy-crossover = "python.analysis.solver_crossover:main"
+fmm-galaxy-force-error = "scripts.run_force_error_benchmarks:main"
+fmm-galaxy-parquet = "python.utils.parquet_io:main"
+fmm-galaxy-plot = "python.analysis.plot_snapshots:main"
+fmm-galaxy-render = "python.animation.render_snapshots:main"
+fmm-galaxy-render-gif = "python.animation.render_scientific_gif:main"
+fmm-galaxy-render-readme-gif = "scripts.render_readme_snapshot_gif:main"
+fmm-galaxy-sweep = "scripts.sweep:main"
+fmm-galaxy-viewer = "python.animation.interactive_viewer:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -108,5 +140,5 @@ show_missing = true
 skip_empty = true
 
 [tool.setuptools.packages.find]
-where = ["src"]
-include = ["python*"]
+where = ["src", "."]
+include = ["python*", "scripts*"]
