@@ -14,7 +14,7 @@ A compact 3D gravitational N-body simulator for galaxy collision experiments. Th
 - Reproducible disk-galaxy initial conditions from TOML-like configs
 - CSV or Apache Parquet snapshots plus metadata and energy/momentum diagnostics
 - Python snapshot loader, static plotting, and MP4/GIF animation scripts
-- CTest smoke tests covering vectors, forces, integration, FMM accuracy, CUDA fallback, MPI ownership, config parsing, diagnostics, and snapshot writing
+- Catch2/CTest smoke tests covering vectors, forces, integration, FMM accuracy, CUDA fallback, MPI ownership, config parsing, diagnostics, and snapshot writing
 
 ## Example Visuals
 
@@ -84,12 +84,14 @@ scripts/        build and smoke-test helpers
 ## Build
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON -DENABLE_CUDA=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON -DENABLE_CUDA=ON -DFMM_GALAXY_FETCH_TEST_DEPS=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-If MPI or CUDA are not installed, CMake falls back to the serial CPU build.
+If MPI or CUDA are not installed, CMake falls back to the serial CPU build. If
+Catch2 is already installed, omit `-DFMM_GALAXY_FETCH_TEST_DEPS=ON`; for
+install-only builds without tests, pass `-DBUILD_TESTING=OFF`.
 
 Install the C++ simulator, headers, configs, and CMake package metadata:
 

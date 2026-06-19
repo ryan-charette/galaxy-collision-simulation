@@ -1,11 +1,11 @@
-#include "tests/test_support.hpp"
-
 #include "core/integrator.hpp"
 #include "core/vector2.hpp"
 #include "cuda/cuda_solver.hpp"
 #include "direct/direct_solver.hpp"
 #include "fmm/fmm_solver.hpp"
 #include "fmm/quadtree.hpp"
+
+#include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 #include <random>
@@ -26,11 +26,8 @@ std::vector<fmmgalaxy::Particle> random_particles(std::size_t count) {
 
 }  // namespace
 
-int run_cuda_fallback_tests() {
+TEST_CASE("CUDA fallback paths match CPU solver behavior", "[cuda][fallback]") {
     using fmmgalaxy::Vec2;
-    using fmmgalaxy::tests::require;
-
-    int failures = 0;
 
     std::vector<fmmgalaxy::Particle> direct_particles = random_particles(80);
     const auto initial_particles = direct_particles;
@@ -84,15 +81,9 @@ int run_cuda_fallback_tests() {
         cuda_tree_relative_error_sum / static_cast<double>(direct_particles.size());
     const double cuda_fmm_mean_relative_error =
         cuda_fmm_relative_error_sum / static_cast<double>(direct_particles.size());
-    failures += !require(cuda_mean_relative_error < 1.0e-10, "CUDA direct solver matches direct solver");
-    failures += !require(
-        cuda_tree_mean_relative_error < 1.0e-8,
-        "CUDA tree solver matches CPU tree solver"
-    );
-    failures += !require(
-        cuda_fmm_mean_relative_error < 1.0e-8,
-        "CUDA FMM solver matches CPU FMM solver"
-    );
+    CHECK(cuda_mean_relative_error < 1.0e-10);
+    CHECK(cuda_tree_mean_relative_error < 1.0e-8);
+    CHECK(cuda_fmm_mean_relative_error < 1.0e-8);
 
     auto tree_step_particles = initial_particles;
     auto cuda_tree_step_particles = initial_particles;
@@ -134,14 +125,6 @@ int run_cuda_fallback_tests() {
                 )
         );
     }
-    failures += !require(
-        cuda_tree_step_error < 1.0e-7,
-        "CUDA tree leapfrog step matches CPU tree step"
-    );
-    failures += !require(
-        cuda_fmm_step_error < 1.0e-7,
-        "CUDA FMM leapfrog step matches CPU FMM step"
-    );
-
-    return failures;
+    CHECK(cuda_tree_step_error < 1.0e-7);
+    CHECK(cuda_fmm_step_error < 1.0e-7);
 }

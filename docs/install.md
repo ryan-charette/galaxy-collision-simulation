@@ -46,10 +46,15 @@ example `python -m python.analysis.plot_snapshots` and
 Configure and build:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON -DENABLE_CUDA=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON -DENABLE_CUDA=ON -DFMM_GALAXY_FETCH_TEST_DEPS=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
+
+The C++ tests use Catch2. CMake first looks for an installed Catch2 3 package.
+The `FMM_GALAXY_FETCH_TEST_DEPS` option lets CMake download it for local test
+builds when it is not installed. For install-only builds that do not run tests,
+configure with `-DBUILD_TESTING=OFF`.
 
 Install to a local prefix:
 

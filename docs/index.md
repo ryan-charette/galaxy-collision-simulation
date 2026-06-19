@@ -33,7 +33,7 @@ milestones
 Build and test the C++ simulator:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON -DENABLE_CUDA=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON -DENABLE_CUDA=ON -DFMM_GALAXY_FETCH_TEST_DEPS=ON
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```

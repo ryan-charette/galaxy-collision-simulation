@@ -21,7 +21,8 @@ benchmark changes.
 
 ### Changed
 
-- None yet.
+- C++ tests now use Catch2 with CTest discovery instead of the custom
+  `require` helper.
 
 ### Removed
 

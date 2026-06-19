@@ -8,6 +8,7 @@ project(DistributedFMMGalaxySim
 
 option(ENABLE_MPI "Enable MPI support when available" ON)
 option(ENABLE_CUDA "Enable CUDA support when available" ON)
+option(FMM_GALAXY_FETCH_TEST_DEPS "Download missing C++ test dependencies with FetchContent" OFF)
 
 if(ENABLE_MPI)
     set(FMM_GALAXY_CMAKE_ENABLE_MPI 1)
@@ -147,18 +148,48 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    find_package(Catch2 3 QUIET)
+    if(NOT TARGET Catch2::Catch2WithMain)
+        if(NOT FMM_GALAXY_FETCH_TEST_DEPS)
+            message(FATAL_ERROR
+                "Catch2 3 is required when BUILD_TESTING=ON. "
+                "Install Catch2, configure with -DFMM_GALAXY_FETCH_TEST_DEPS=ON, "
+                "or configure with -DBUILD_TESTING=OFF."
+            )
+        endif()
+        include(FetchContent)
+        set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+        set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
+        FetchContent_Declare(
+            Catch2
+            GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+            GIT_TAG v3.7.1
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_MakeAvailable(Catch2)
+        list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
+    endif()
+
     add_executable(fmm_galaxy_tests
         src/cpp/tests/config_snapshot_tests.cpp
         src/cpp/tests/cuda_fallback_tests.cpp
         src/cpp/tests/math_direct_tests.cpp
-        src/cpp/tests/smoke_tests.cpp
         src/cpp/tests/tree_fmm_accuracy_tests.cpp
     )
-    target_link_libraries(fmm_galaxy_tests PRIVATE fmm_galaxy_core)
+    target_link_libraries(fmm_galaxy_tests PRIVATE fmm_galaxy_core Catch2::Catch2WithMain)
     if(HAVE_CUDA)
         target_link_libraries(fmm_galaxy_tests PRIVATE fmm_galaxy_cuda)
     endif()
-    add_test(NAME smoke_tests COMMAND fmm_galaxy_tests)
+    include(Catch OPTIONAL RESULT_VARIABLE FMM_GALAXY_CATCH_MODULE)
+    if(FMM_GALAXY_CATCH_MODULE)
+        catch_discover_tests(
+            fmm_galaxy_tests
+            TEST_PREFIX cpp::
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        )
+    else()
+        add_test(NAME fmm_galaxy_tests COMMAND fmm_galaxy_tests)
+    endif()
 endif()
 
 install(

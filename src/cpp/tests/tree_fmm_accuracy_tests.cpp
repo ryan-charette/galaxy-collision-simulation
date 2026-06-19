@@ -1,11 +1,11 @@
-#include "tests/test_support.hpp"
-
 #include "core/diagnostics.hpp"
 #include "core/vector2.hpp"
 #include "direct/direct_solver.hpp"
 #include "fmm/fmm_solver.hpp"
 #include "fmm/quadtree.hpp"
 #include "mpi/distributed_solver.hpp"
+
+#include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -27,11 +27,8 @@ std::vector<fmmgalaxy::Particle> random_particles(std::size_t count) {
 
 }  // namespace
 
-int run_tree_fmm_accuracy_tests() {
+TEST_CASE("Approximate solvers stay close to direct summation", "[tree][fmm]") {
     using fmmgalaxy::Vec2;
-    using fmmgalaxy::tests::require;
-
-    int failures = 0;
 
     std::vector<fmmgalaxy::Particle> direct_particles = random_particles(80);
     auto tree_particles = direct_particles;
@@ -61,19 +58,14 @@ int run_tree_fmm_accuracy_tests() {
     const double mean_relative_error = relative_error_sum / static_cast<double>(direct_particles.size());
     const double fmm_mean_relative_error =
         fmm_relative_error_sum / static_cast<double>(direct_particles.size());
-    failures += !require(mean_relative_error < 0.08, "tree solver stays close to direct solver");
-    failures += !require(fmm_mean_relative_error < 0.25, "p=4 FMM solver stays close to direct solver");
+    CHECK(mean_relative_error < 0.08);
+    CHECK(fmm_mean_relative_error < 0.25);
 
     const auto serial_owned = fmmgalaxy::ownership_for_rank(direct_particles.size(), 0, 1);
-    failures += !require(serial_owned.begin == 0, "MPI serial ownership starts at zero");
-    failures += !require(
-        serial_owned.end == direct_particles.size(),
-        "MPI serial ownership owns all particles"
-    );
+    CHECK(serial_owned.begin == 0);
+    CHECK(serial_owned.end == direct_particles.size());
 
     const auto diagnostics = fmmgalaxy::compute_diagnostics(direct_particles, softened);
-    failures += !require(diagnostics.total_mass > 0.0, "diagnostics compute total mass");
-    failures += !require(std::isfinite(diagnostics.total_energy), "diagnostics energy is finite");
-
-    return failures;
+    CHECK(diagnostics.total_mass > 0.0);
+    CHECK(std::isfinite(diagnostics.total_energy));
 }

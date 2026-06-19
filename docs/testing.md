@@ -7,20 +7,22 @@ enough for `O(N^2)` work.
 
 ## C++ Tests
 
-The C++ test executable is registered with CTest as `smoke_tests`.
+The C++ tests use Catch2 and are registered with CTest. CMake first looks for
+an installed Catch2 3 package. If it is not installed, pass
+`-DFMM_GALAXY_FETCH_TEST_DEPS=ON` to let CMake download the test dependency.
 
 ```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFMM_GALAXY_FETCH_TEST_DEPS=ON
 cmake --build build --config Release --target fmm_galaxy_tests
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The smoke executable is split into focused source files:
+The Catch2 test target is split into focused source files:
 
 - `src/cpp/tests/math_direct_tests.cpp`
 - `src/cpp/tests/tree_fmm_accuracy_tests.cpp`
 - `src/cpp/tests/cuda_fallback_tests.cpp`
 - `src/cpp/tests/config_snapshot_tests.cpp`
-- `src/cpp/tests/smoke_tests.cpp`
 
 Coverage includes vector arithmetic, generated galaxies, pairwise force
 symmetry, finite softened accelerations, leapfrog consistency, direct/tree/FMM
@@ -59,6 +61,7 @@ cmake -S . -B build-coverage \
   -DCMAKE_BUILD_TYPE=Debug \
   -DENABLE_MPI=OFF \
   -DENABLE_CUDA=OFF \
+  -DFMM_GALAXY_FETCH_TEST_DEPS=ON \
   -DCMAKE_CXX_FLAGS="--coverage -O0 -g" \
   -DCMAKE_EXE_LINKER_FLAGS="--coverage"
 
