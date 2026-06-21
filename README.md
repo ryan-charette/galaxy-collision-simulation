@@ -1,6 +1,6 @@
 # Distributed Fast Multipole Galaxy Collision Simulator
 
-A compact 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV/Parquet snapshot output, diagnostics, and Python plotting/animation tools.
+A 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV/Parquet snapshot output, diagnostics, and Python plotting/animation tools.
 
 ## Features
 
