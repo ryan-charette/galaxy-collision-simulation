@@ -68,6 +68,7 @@ cmake -S . -B build-coverage \
 cmake --build build-coverage --target fmm_galaxy_tests --parallel
 ctest --test-dir build-coverage --output-on-failure
 gcovr --root . --filter src/cpp --exclude src/cpp/tests \
+  --exclude-directories build-coverage/_deps \
   --xml-pretty --output coverage/cpp.xml build-coverage
 ```
 

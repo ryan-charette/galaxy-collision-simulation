@@ -107,6 +107,7 @@ jobs:
           --root .
           --filter src/cpp
           --exclude src/cpp/tests
+          --exclude-directories build-coverage/_deps
           --xml-pretty
           --output coverage/cpp.xml
           build-coverage
