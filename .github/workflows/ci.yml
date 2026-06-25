@@ -108,6 +108,9 @@ jobs:
           --filter src/cpp
           --exclude src/cpp/tests
           --exclude-directories build-coverage/_deps
+          --exclude-throw-branches
+          --exclude-unreachable-branches
+          --merge-lines
           --xml-pretty
           --output coverage/cpp.xml
           build-coverage
