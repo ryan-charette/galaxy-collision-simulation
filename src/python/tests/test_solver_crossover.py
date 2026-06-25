@@ -12,7 +12,9 @@ from python.analysis.solver_crossover import (
     best_solver_by_n,
     cuda_crossover_rows,
     load_points,
+    main,
     median_runtime,
+    plot_outputs,
     parse_thresholds,
     read_accuracy_csv,
     read_runtime_csv,
@@ -140,3 +142,81 @@ def test_crossover_summaries_choose_fastest_qualifying_solver(tmp_path: Path) ->
     assert rows[0]["solver"] == "tree"
     assert target_csv.read_text(encoding="utf-8").splitlines()[1].startswith("0.001,64,tree")
     assert "## CPU vs CUDA Crossover" in markdown.read_text(encoding="utf-8")
+
+
+def test_plot_outputs_and_main_write_crossover_artifacts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    runtime_points = [_runtime_point("direct", 64, 4.0), _runtime_point("tree", 64, 2.0)]
+    accuracy_points = [_accuracy_point("tree", 64, 1.0e-3, 2.0)]
+    plot_dir = tmp_path / "plots"
+
+    plot_outputs(plot_dir, runtime_points, accuracy_points)
+
+    assert (plot_dir / "runtime_vs_n.png").exists()
+    assert (plot_dir / "particle_steps_vs_n.png").exists()
+    assert (plot_dir / "force_error_vs_runtime.png").exists()
+
+    runtime_csv = tmp_path / "runtime.csv"
+    runtime_csv.write_text(
+        "\n".join(
+            [
+                "solver,particles,output_format,seconds,particle_steps_per_second,build_type,compiler,cuda_available,cuda_device_name,mpi_enabled,hostname",
+                "direct,64,csv,4.0,16.0,Release,GNU,false,,false,node",
+                "tree,64,csv,2.0,32.0,Release,GNU,false,,false,node",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    accuracy_csv = tmp_path / "accuracy.csv"
+    accuracy_csv.write_text(
+        "\n".join(
+            [
+                "solver,particles,force_rmse,max_force_error,relative_force_error,seconds,particle_steps_per_second,build_type,compiler,cuda_available,cuda_device_name,mpi_enabled,hostname",
+                "tree,64,1e-3,2e-3,3e-3,2.0,32.0,Release,GNU,false,,false,node",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "main"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fmm-galaxy-crossover",
+            "--runtime-csv",
+            str(runtime_csv),
+            "--accuracy-csv",
+            str(accuracy_csv),
+            "--output",
+            str(output_dir),
+            "--target-rmse",
+            "1e-2",
+            "1e-3",
+        ],
+    )
+
+    main()
+
+    assert (output_dir / "solver_crossover_summary.md").exists()
+    assert (output_dir / "best_solver_by_n.csv").exists()
+    assert (output_dir / "target_accuracy_summary.csv").exists()
+
+
+def test_solver_crossover_main_reports_missing_runtime_inputs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        ["fmm-galaxy-crossover", "--runtime-csv", str(tmp_path / "missing.csv")],
+    )
+
+    try:
+        main()
+    except FileNotFoundError as exc:
+        assert "No runtime CSV inputs were found" in str(exc)
+    else:
+        raise AssertionError("Expected missing runtime inputs to raise")

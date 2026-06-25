@@ -3,6 +3,9 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pandas as pd
+import pytest
+
 from python.utils.tables import markdown_table, write_csv_rows, write_table
 
 
@@ -22,6 +25,16 @@ def test_write_table_uses_csv_for_non_parquet_suffix(tmp_path: Path) -> None:
     write_table(output, [{"n": 128, "solver": "tree"}], ["n", "solver"])
 
     assert output.read_text(encoding="utf-8").splitlines() == ["n,solver", "128,tree"]
+
+
+def test_write_table_uses_parquet_for_parquet_suffix(tmp_path: Path) -> None:
+    pytest.importorskip("pyarrow")
+    output = tmp_path / "summary.parquet"
+
+    write_table(output, [{"n": 128, "solver": "tree"}], ["n", "solver"])
+
+    frame = pd.read_parquet(output, engine="pyarrow")
+    assert frame.to_dict(orient="records") == [{"n": 128, "solver": "tree"}]
 
 
 def test_markdown_table_formats_values() -> None:

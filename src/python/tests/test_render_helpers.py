@@ -160,6 +160,68 @@ def test_render_snapshot_modes_delegate_to_save_animation(
     ]
 
 
+def test_save_animation_selects_writer_from_output_suffix(tmp_path: Path) -> None:
+    class DummyAnimation:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def save(self, output: Path, **kwargs: object) -> None:
+            self.calls.append({"output": output, **kwargs})
+
+    gif_animation = DummyAnimation()
+    gif_fig = plt.figure()
+    render_snapshots._save_animation(gif_fig, gif_animation, tmp_path / "out.gif", fps=5, dpi=72)
+    assert gif_animation.calls[0]["output"] == tmp_path / "out.gif"
+    assert "writer" in gif_animation.calls[0]
+    assert gif_animation.calls[0]["dpi"] == 72
+
+    movie_animation = DummyAnimation()
+    movie_fig = plt.figure()
+    render_snapshots._save_animation(movie_fig, movie_animation, tmp_path / "out.mp4", fps=7, dpi=90)
+    assert movie_animation.calls[0] == {"output": tmp_path / "out.mp4", "fps": 7, "dpi": 90}
+
+
+def test_render_snapshots_main_dispatches_modes_and_empty_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    snapshots = [_snapshot(0), _snapshot(1)]
+    calls: list[str] = []
+    monkeypatch.setattr(render_snapshots, "load_snapshots", lambda _path, stride: snapshots)
+    monkeypatch.setattr(render_snapshots, "_render_density", lambda _snapshots, _args: calls.append("density"))
+    monkeypatch.setattr(
+        render_snapshots,
+        "_render_scatter3d",
+        lambda _snapshots, _args: calls.append("scatter3d"),
+    )
+    monkeypatch.setattr(render_snapshots, "_render_scatter", lambda _snapshots, _args: calls.append("scatter"))
+
+    for mode in ["density", "scatter3d", "scatter"]:
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "fmm-galaxy-render",
+                "--input",
+                str(tmp_path),
+                "--output",
+                str(tmp_path / f"{mode}.gif"),
+                "--mode",
+                mode,
+            ],
+        )
+        render_snapshots.main()
+
+    assert calls == ["density", "scatter3d", "scatter"]
+
+    monkeypatch.setattr(render_snapshots, "load_snapshots", lambda _path, stride: [])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["fmm-galaxy-render", "--input", str(tmp_path), "--output", str(tmp_path / "empty.gif")],
+    )
+    with pytest.raises(FileNotFoundError, match="No snapshots found"):
+        render_snapshots.main()
+
+
 def test_scientific_gif_rendering_pipeline_writes_small_gif(tmp_path: Path) -> None:
     for step in [0, 1]:
         path = tmp_path / f"snapshot_{step:06d}.csv"
@@ -204,3 +266,64 @@ def test_scientific_gif_rendering_pipeline_writes_small_gif(tmp_path: Path) -> N
     render_scientific_gif.render_gif(args)
 
     assert output.exists()
+
+    density_output = tmp_path / "density.gif"
+    args.mode = "density"
+    args.output = density_output
+    args.max_particles = 0
+    args.no_label = True
+    render_scientific_gif.render_gif(args)
+    assert density_output.exists()
+
+
+def test_scientific_gif_main_validates_inputs_and_dispatches(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    rendered: list[argparse.Namespace] = []
+    monkeypatch.setattr(render_scientific_gif, "render_gif", lambda args: rendered.append(args))
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fmm-galaxy-render-gif",
+            "--input",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "valid.gif"),
+            "--width",
+            "32",
+            "--height",
+            "24",
+            "--fps",
+            "2",
+            "--bounds-stride",
+            "1",
+            "--density-percentile",
+            "100",
+        ],
+    )
+    render_scientific_gif.main()
+    assert rendered[0].output == tmp_path / "valid.gif"
+
+    invalid_cases = [
+        ["--width", "0"],
+        ["--fps", "0"],
+        ["--bounds-stride", "0"],
+        ["--density-percentile", "101"],
+    ]
+    for option, value in invalid_cases:
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "fmm-galaxy-render-gif",
+                "--input",
+                str(tmp_path),
+                "--output",
+                str(tmp_path / "invalid.gif"),
+                option,
+                value,
+            ],
+        )
+        with pytest.raises(ValueError):
+            render_scientific_gif.main()

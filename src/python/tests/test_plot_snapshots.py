@@ -4,6 +4,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 from python.analysis import plot_snapshots
 from python.utils.snapshots import load_snapshot
@@ -85,3 +86,67 @@ def test_plot_diagnostics_noops_when_file_is_missing(tmp_path: Path) -> None:
     plot_snapshots._plot_diagnostics(tmp_path, output)
 
     assert not output.exists()
+
+
+def test_plot_snapshots_main_writes_requested_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot_000001.csv"
+    _write_snapshot(snapshot_path)
+    _write_diagnostics(tmp_path / "diagnostics.csv")
+    output = tmp_path / "main_snapshot.png"
+    diagnostics_output = tmp_path / "main_diagnostics.png"
+    density_output = tmp_path / "main_density.png"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fmm-galaxy-plot",
+            "--input",
+            str(tmp_path),
+            "--snapshot",
+            str(snapshot_path),
+            "--output",
+            str(output),
+            "--diagnostics-output",
+            str(diagnostics_output),
+            "--density-output",
+            str(density_output),
+            "--density-bins",
+            "8",
+        ],
+    )
+
+    plot_snapshots.main()
+
+    assert output.exists()
+    assert diagnostics_output.exists()
+    assert density_output.exists()
+
+
+def test_plot_snapshots_main_can_skip_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    snapshot_path = tmp_path / "snapshot_000001.csv"
+    _write_snapshot(snapshot_path)
+    output = tmp_path / "main_snapshot.png"
+    diagnostics_output = tmp_path / "main_snapshot_diagnostics.png"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "fmm-galaxy-plot",
+            "--input",
+            str(tmp_path),
+            "--snapshot",
+            str(snapshot_path),
+            "--output",
+            str(output),
+            "--no-diagnostics",
+        ],
+    )
+
+    plot_snapshots.main()
+
+    assert output.exists()
+    assert not diagnostics_output.exists()

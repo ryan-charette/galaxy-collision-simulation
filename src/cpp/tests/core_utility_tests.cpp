@@ -1,16 +1,25 @@
 #include "core/config.hpp"
+#include "core/diagnostics.hpp"
 #include "core/initial_conditions.hpp"
 #include "core/integrator.hpp"
 #include "core/provenance.hpp"
 #include "core/simulation_info.hpp"
 #include "core/simulation_runner.hpp"
+#include "direct/direct_solver.hpp"
+#include "fmm/fmm_solver.hpp"
+#include "fmm/multipole.hpp"
+#include "fmm/quadtree.hpp"
+#include "fmm/tree_geometry.hpp"
 #include "mpi/distributed_solver.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -131,6 +140,47 @@ TEST_CASE("Integrator range overloads clamp work to owned particles", "[integrat
     CHECK_THAT(particles[0].velocity.y, WithinAbs(0.05, 1.0e-12));
 }
 
+TEST_CASE("Diagnostics and direct target ranges handle edge cases", "[diagnostics][direct]") {
+    using Catch::Matchers::WithinAbs;
+    fmmgalaxy::PhysicsParams physics;
+    physics.gravitational_constant = 2.0;
+    physics.softening = 0.0;
+
+    std::vector<fmmgalaxy::Particle> particles(3);
+    particles[0].position = {0.0, 0.0, 0.0};
+    particles[0].velocity = {1.0, 0.0, 0.0};
+    particles[0].mass = 2.0;
+    particles[1].position = {0.0, 0.0, 0.0};
+    particles[1].mass = 3.0;
+    particles[2].position = {2.0, 0.0, 0.0};
+    particles[2].velocity = {0.0, 1.0, 0.0};
+    particles[2].mass = 1.0;
+
+    const auto diagnostics = fmmgalaxy::compute_diagnostics(particles, physics);
+    CHECK_THAT(diagnostics.total_mass, WithinAbs(6.0, 1.0e-12));
+    CHECK_THAT(diagnostics.center_of_mass.x, WithinAbs(1.0 / 3.0, 1.0e-12));
+    CHECK_THAT(diagnostics.kinetic_energy, WithinAbs(1.5, 1.0e-12));
+    CHECK_THAT(diagnostics.potential_energy, WithinAbs(-5.0, 1.0e-12));
+    CHECK_THAT(diagnostics.total_energy, WithinAbs(-3.5, 1.0e-12));
+    CHECK_THAT(diagnostics.angular_momentum.z, WithinAbs(2.0, 1.0e-12));
+
+    const auto empty_diagnostics = fmmgalaxy::compute_diagnostics({}, physics);
+    CHECK_THAT(empty_diagnostics.total_mass, WithinAbs(0.0, 1.0e-12));
+    CHECK_THAT(empty_diagnostics.center_of_mass.x, WithinAbs(0.0, 1.0e-12));
+
+    for (auto& particle : particles) {
+        particle.acceleration = {9.0, 9.0, 9.0};
+    }
+    fmmgalaxy::compute_direct_accelerations_for_targets(particles, physics, 1, 2);
+    CHECK_THAT(particles[0].acceleration.x, WithinAbs(9.0, 1.0e-12));
+    CHECK_THAT(particles[1].acceleration.x, WithinAbs(0.5, 1.0e-12));
+    CHECK_THAT(particles[2].acceleration.x, WithinAbs(9.0, 1.0e-12));
+    CHECK_THAT(
+        fmmgalaxy::softened_acceleration({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, 1.0, physics).x,
+        WithinAbs(0.0, 1.0e-12)
+    );
+}
+
 TEST_CASE("MPI ownership helpers partition serial and distributed ranges", "[mpi]") {
     const auto serial = fmmgalaxy::ownership_for_rank(10, 0, 1);
     CHECK(serial.begin == 0);
@@ -150,6 +200,137 @@ TEST_CASE("MPI ownership helpers partition serial and distributed ranges", "[mpi
     fmmgalaxy::mpi_synchronize_particles(particles, serial);
     const auto execution = fmmgalaxy::mpi_execution();
     CHECK(execution.size >= 1);
+}
+
+TEST_CASE("Tree geometry, multipoles, and flat exports preserve spatial structure", "[tree][fmm]") {
+    using Catch::Matchers::WithinAbs;
+    fmmgalaxy::PhysicsParams physics;
+    physics.softening = 0.05;
+
+    CHECK(fmmgalaxy::normalize_expansion_order(-2) == 0);
+    CHECK(fmmgalaxy::normalize_expansion_order(1) == 2);
+    CHECK(fmmgalaxy::normalize_expansion_order(3) == 4);
+    CHECK(fmmgalaxy::normalize_expansion_order(9) == 4);
+
+    std::vector<fmmgalaxy::Particle> particles(8);
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        particles[i].position = {
+            (i & 1U) ? 1.0 : -1.0,
+            (i & 2U) ? 1.0 : -1.0,
+            (i & 4U) ? 1.0 : -1.0,
+        };
+        particles[i].mass = 1.0 + static_cast<double>(i);
+    }
+
+    const auto root = fmmgalaxy::root_cube_for_particles(particles, physics);
+    CHECK_THAT(root.center.x, WithinAbs(0.0, 1.0e-12));
+    CHECK(root.half_width > 1.0);
+    CHECK(fmmgalaxy::child_index_for_position({0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}) == 7);
+    const auto child = fmmgalaxy::child_center({0.0, 0.0, 0.0}, 0.5, 0);
+    CHECK_THAT(child.x, WithinAbs(-0.5, 1.0e-12));
+    CHECK_THAT(child.y, WithinAbs(-0.5, 1.0e-12));
+    CHECK_THAT(child.z, WithinAbs(-0.5, 1.0e-12));
+
+    CHECK(fmmgalaxy::build_flat_tree({}, physics, 0.5, 1, 8, 2).nodes.empty());
+    auto flat_tree = fmmgalaxy::build_flat_tree(particles, physics, 0.5, 1, 8, 2);
+    REQUIRE_FALSE(flat_tree.nodes.empty());
+    CHECK_FALSE(flat_tree.nodes.front().is_leaf);
+    CHECK(flat_tree.particle_indices.size() == particles.size());
+    const auto leaf_count = std::count_if(flat_tree.nodes.begin(), flat_tree.nodes.end(), [](const auto& node) {
+        return node.is_leaf;
+    });
+    CHECK(leaf_count >= 8);
+
+    auto moments = fmmgalaxy::zero_multipole_moments();
+    fmmgalaxy::add_multipole_point(moments, {-0.5, 0.0, 0.0}, 1.0);
+    fmmgalaxy::add_multipole_point(moments, {0.5, 0.0, 0.0}, 1.0);
+    const auto monopole = fmmgalaxy::multipole_acceleration(
+        {0.0, 0.0, 0.0},
+        {10.0, 0.0, 0.0},
+        2.0,
+        moments,
+        physics,
+        0
+    );
+    const auto direct_monopole =
+        fmmgalaxy::softened_acceleration({0.0, 0.0, 0.0}, {10.0, 0.0, 0.0}, 2.0, physics);
+    CHECK_THAT(monopole.x, WithinAbs(direct_monopole.x, 1.0e-12));
+    const auto quadrupole = fmmgalaxy::multipole_acceleration(
+        {0.0, 0.0, 0.0},
+        {10.0, 0.0, 0.0},
+        2.0,
+        moments,
+        physics,
+        4
+    );
+    CHECK(quadrupole.x > 0.0);
+
+    auto parent_moments = fmmgalaxy::zero_multipole_moments();
+    fmmgalaxy::add_multipole_shifted_child(parent_moments, moments, {1.0, 0.0, 0.0}, 2.0);
+    CHECK(std::any_of(parent_moments.values.begin(), parent_moments.values.end(), [](double value) {
+        return value != 0.0;
+    }));
+
+    auto clamped_local = fmmgalaxy::zero_local_expansion({0.0, 0.0, 0.0}, 0.0, 3);
+    CHECK(clamped_local.radius > 0.0);
+    CHECK(clamped_local.order == 4);
+
+    auto local = fmmgalaxy::zero_local_expansion({0.0, 0.0, 0.0}, 1.0, 3);
+    fmmgalaxy::add_multipole_to_local(local, {10.0, 0.0, 0.0}, 2.0, moments, physics);
+    const auto local_acceleration = fmmgalaxy::evaluate_local_acceleration(local, {0.1, 0.2, 0.0});
+    CHECK(std::isfinite(local_acceleration.x));
+    CHECK(fmmgalaxy::norm(local_acceleration) > 0.0);
+
+    auto child_local = fmmgalaxy::zero_local_expansion({0.25, 0.0, 0.0}, 0.5, 4);
+    fmmgalaxy::add_local_to_local(child_local, local);
+    const auto translated_acceleration =
+        fmmgalaxy::evaluate_local_acceleration(child_local, {0.25, 0.1, 0.0});
+    CHECK(std::isfinite(translated_acceleration.x));
+    CHECK(fmmgalaxy::norm(translated_acceleration) > 0.0);
+
+    fmmgalaxy::add_multipole_to_local(local, {1.0, 0.0, 0.0}, 0.0, moments, physics);
+    CHECK_THAT(
+        fmmgalaxy::multipole_acceleration({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 0.0, moments, physics, 4).x,
+        WithinAbs(0.0, 1.0e-12)
+    );
+}
+
+TEST_CASE("FMM target ranges and flat exports cover sparse leaves", "[fmm]") {
+    using Catch::Matchers::WithinAbs;
+    fmmgalaxy::PhysicsParams physics;
+    physics.softening = 0.03;
+    std::vector<fmmgalaxy::Particle> particles(12);
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        particles[i].position = {
+            static_cast<double>(i % 4),
+            static_cast<double>((i / 4) % 3),
+            static_cast<double>(i % 2) * 0.5,
+        };
+        particles[i].mass = 1.0 / static_cast<double>(particles.size());
+        particles[i].acceleration = {99.0, 99.0, 99.0};
+    }
+
+    fmmgalaxy::FmmOptions options;
+    options.theta = 0.75;
+    options.leaf_capacity = 1;
+    options.max_depth = 5;
+    options.expansion_order = 3;
+
+    CHECK(fmmgalaxy::build_flat_fmm({}, physics, options).tree.nodes.empty());
+    auto flat_fmm = fmmgalaxy::build_flat_fmm(particles, physics, options);
+    CHECK_FALSE(flat_fmm.tree.nodes.empty());
+    CHECK_FALSE(flat_fmm.leaves.empty());
+    CHECK(flat_fmm.particle_leaf_indices.size() == particles.size());
+    CHECK(flat_fmm.near_leaf_node_indices.size() >= flat_fmm.leaves.size());
+
+    fmmgalaxy::compute_fmm_accelerations_for_targets(particles, physics, 3, 7, options);
+    CHECK_THAT(particles[0].acceleration.x, WithinAbs(99.0, 1.0e-12));
+    CHECK(particles[3].acceleration.x != 99.0);
+    CHECK_THAT(particles[8].acceleration.x, WithinAbs(99.0, 1.0e-12));
+
+    auto unchanged = particles;
+    fmmgalaxy::compute_fmm_accelerations_for_targets(unchanged, physics, 5, 5, options);
+    CHECK_THAT(unchanged[0].acceleration.x, WithinAbs(particles[0].acceleration.x, 1.0e-12));
 }
 
 TEST_CASE("Initial condition generation rejects degenerate galaxies", "[initial-conditions]") {
@@ -204,4 +385,32 @@ TEST_CASE("Serial runner supports disabled snapshot output and rejects unknown s
         fmmgalaxy::run_configured_simulation(config, execution, test_provenance()),
         std::runtime_error
     );
+}
+
+TEST_CASE("Serial runner dispatches CPU and CUDA fallback solver aliases", "[runner][cuda]") {
+    fmmgalaxy::SimulationConfig config = fmmgalaxy::default_config();
+    config.name = "dispatch";
+    config.steps = 0;
+    config.dt = 0.001;
+    config.snapshot_every = 1;
+    config.output.format = fmmgalaxy::OutputFormat::None;
+    config.output.acceleration_dump = false;
+    config.galaxies = {
+        fmmgalaxy::GalaxyConfig{2, 1.0, 1.0, {-0.5, 0.0, 0.0}, {0.0, 0.1, 0.0}, 0.0, 0, 0.0, 0.0},
+    };
+    fmmgalaxy::MpiExecution execution;
+
+    const std::vector<std::string> solvers{
+        "treecode",
+        "monopole-fmm",
+        "cuda",
+        "gpu-tree",
+        "gpu-fmm",
+    };
+    for (const auto& solver : solvers) {
+        config.solver = solver;
+        config.output.directory = std::filesystem::path("core_utility_dispatch_output") / solver;
+        fmmgalaxy::run_configured_simulation(config, execution, test_provenance());
+        CHECK(std::filesystem::exists(config.output.directory / "metadata.json"));
+    }
 }
