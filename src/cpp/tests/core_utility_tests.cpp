@@ -5,11 +5,15 @@
 #include "core/provenance.hpp"
 #include "core/simulation_info.hpp"
 #include "core/simulation_runner.hpp"
+#include "cuda/cuda_solver.hpp"
 #include "direct/direct_solver.hpp"
 #include "fmm/fmm_solver.hpp"
 #include "fmm/multipole.hpp"
 #include "fmm/quadtree.hpp"
 #include "fmm/tree_geometry.hpp"
+#include "io/json_writer.hpp"
+#include "io/parquet_converter.hpp"
+#include "io/snapshot_writer.hpp"
 #include "mpi/distributed_solver.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -17,8 +21,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <set>
 #include <string>
 #include <vector>
@@ -28,6 +34,100 @@ namespace {
 void write_text(const std::filesystem::path& path, const std::string& contents) {
     std::ofstream output(path, std::ios::trunc);
     output << contents;
+}
+
+std::string read_text(const std::filesystem::path& path) {
+    std::ifstream input(path);
+    std::ostringstream contents;
+    contents << input.rdbuf();
+    return contents.str();
+}
+
+void set_environment(const char* name, const std::string& value) {
+#ifdef _WIN32
+    _putenv_s(name, value.c_str());
+#else
+    setenv(name, value.c_str(), 1);
+#endif
+}
+
+void unset_environment(const char* name) {
+#ifdef _WIN32
+    _putenv_s(name, "");
+#else
+    unsetenv(name);
+#endif
+}
+
+class ScopedEnvironmentVariable {
+public:
+    ScopedEnvironmentVariable(const char* name, const std::string& value) : name_(name) {
+        if (const char* previous = std::getenv(name)) {
+            had_previous_ = true;
+            previous_ = previous;
+        }
+        set_environment(name_.c_str(), value);
+    }
+
+    ~ScopedEnvironmentVariable() {
+        if (had_previous_) {
+            set_environment(name_.c_str(), previous_);
+        } else {
+            unset_environment(name_.c_str());
+        }
+    }
+
+private:
+    std::string name_;
+    bool had_previous_{false};
+    std::string previous_;
+};
+
+std::filesystem::path write_fake_python_bridge(const std::filesystem::path& path) {
+#ifdef _WIN32
+    const auto script_path = std::filesystem::absolute(path.string() + ".cmd");
+    write_text(
+        script_path,
+        "@echo off\n"
+        "set \"out=\"\n"
+        ":loop\n"
+        "if \"%~1\"==\"\" goto done\n"
+        "if \"%~1\"==\"--output\" (\n"
+        "  shift\n"
+        "  set \"out=%~1\"\n"
+        ")\n"
+        "shift\n"
+        "goto loop\n"
+        ":done\n"
+        "if not \"%out%\"==\"\" echo fake parquet>\"%out%\"\n"
+        "exit /b 0\n"
+    );
+#else
+    const auto script_path = std::filesystem::absolute(path);
+    write_text(
+        script_path,
+        "#!/bin/sh\n"
+        "out=\"\"\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output\" ]; then\n"
+        "    shift\n"
+        "    out=\"$1\"\n"
+        "  fi\n"
+        "  shift\n"
+        "done\n"
+        "if [ -n \"$out\" ]; then\n"
+        "  printf 'fake parquet\\n' > \"$out\"\n"
+        "fi\n"
+        "exit 0\n"
+    );
+    std::filesystem::permissions(
+        script_path,
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
+            std::filesystem::perms::owner_exec,
+        std::filesystem::perm_options::replace
+    );
+#endif
+    return script_path;
 }
 
 fmmgalaxy::RunProvenance test_provenance() {
@@ -40,6 +140,27 @@ fmmgalaxy::RunProvenance test_provenance() {
     provenance.hostname = "localhost";
     provenance.timestamp_utc = "2026-01-01T00:00:00Z";
     return provenance;
+}
+
+fmmgalaxy::SimulationConfig small_runner_config(const std::filesystem::path& output_dir) {
+    fmmgalaxy::SimulationConfig config = fmmgalaxy::default_config();
+    config.name = "coverage-runner";
+    config.solver = "direct";
+    config.steps = 1;
+    config.dt = 0.001;
+    config.snapshot_every = 1;
+    config.seed = 13;
+    config.tree_theta = 0.5;
+    config.tree_leaf_capacity = 1;
+    config.fmm_expansion_order = 2;
+    config.output.directory = output_dir;
+    config.output.format = fmmgalaxy::OutputFormat::None;
+    config.output.acceleration_dump = false;
+    config.galaxies = {
+        fmmgalaxy::GalaxyConfig{3, 1.0, 1.0, {-0.5, 0.0, 0.0}, {0.0, 0.1, 0.0}, 0.0, 0, 0.02, 0.1},
+    };
+    config.n_particles = 3;
+    return config;
 }
 
 }  // namespace
@@ -109,6 +230,76 @@ TEST_CASE("Config parser handles synonyms, defaults, and validation errors", "[c
     );
     CHECK_THROWS_AS(fmmgalaxy::load_config("bad_config.toml"), std::runtime_error);
     CHECK_THROWS_AS(fmmgalaxy::load_config("missing_config.toml"), std::runtime_error);
+}
+
+TEST_CASE("Config parser covers defaults, 3D fallback, and validation edge cases", "[config]") {
+    using Catch::Matchers::WithinAbs;
+    const std::string valid_galaxy =
+        "[galaxy.primary]\n"
+        "n_particles=1\n"
+        "mass=1.0\n"
+        "radius=2.0\n";
+
+    write_text(
+        "config_defaults_only.toml",
+        "# Empty galaxy list intentionally falls back to built-in defaults.\n"
+        "[simulation]\n"
+        "solver=\"fmm\"\n"
+    );
+    const auto defaults = fmmgalaxy::load_config("config_defaults_only.toml");
+    CHECK(defaults.name == "smoke_test");
+    CHECK(defaults.n_particles == 256);
+    CHECK(defaults.galaxies.size() == 2);
+
+    write_text(
+        "config_three_dimensional.toml",
+        "[simulation]\n"
+        "name=\"three-dimensional\"\n"
+        "dim=3\n"
+        "steps=1\n"
+        "dt=0.01\n"
+        "snapshot_every=1\n"
+        "[tree]\n"
+        "tree_theta=0.25\n"
+        "tree_leaf_capacity=2\n"
+        "[fmm]\n"
+        "fmm_expansion_order=3\n"
+        "[output]\n"
+        "acceleration_dump=off\n"
+        "[galaxy.primary]\n"
+        "n_particles=1\n"
+        "mass=1.0\n"
+        "radius=2.0\n"
+        "position=[1.0,2.0,3.0]\n"
+        "velocity=[0.1,0.2,0.3]\n"
+        "thickness=0.0\n"
+    );
+    const auto three_dimensional = fmmgalaxy::load_config("config_three_dimensional.toml");
+    REQUIRE(three_dimensional.galaxies.size() == 1);
+    CHECK_THAT(three_dimensional.galaxies[0].position.z, WithinAbs(3.0, 1.0e-12));
+    CHECK_THAT(three_dimensional.galaxies[0].velocity.z, WithinAbs(0.3, 1.0e-12));
+    CHECK_THAT(three_dimensional.galaxies[0].thickness, WithinAbs(0.06, 1.0e-12));
+    CHECK_THAT(three_dimensional.tree_theta, WithinAbs(0.25, 1.0e-12));
+    CHECK(three_dimensional.tree_leaf_capacity == 2);
+    CHECK(three_dimensional.fmm_expansion_order == 3);
+    CHECK_FALSE(three_dimensional.output.acceleration_dump);
+
+    const std::vector<std::pair<std::string, std::string>> invalid_configs{
+        {"config_invalid_line.toml", "[simulation]\nnot_a_key_value_line\n"},
+        {"config_invalid_bool.toml", "[output]\nacceleration_dump=maybe\n"},
+        {"config_invalid_vector_shape.toml", valid_galaxy + "position=1.0\n"},
+        {"config_invalid_vector_count.toml", valid_galaxy + "position=[1.0]\n"},
+        {"config_invalid_snapshot_every.toml", "[simulation]\nsnapshot_every=0\n" + valid_galaxy},
+        {"config_invalid_steps.toml", "[simulation]\nsteps=-1\n" + valid_galaxy},
+        {"config_invalid_dt.toml", "[simulation]\ndt=0\n" + valid_galaxy},
+        {"config_invalid_softening.toml", "[physics]\nsoftening=-0.01\n" + valid_galaxy},
+    };
+
+    for (const auto& [path, contents] : invalid_configs) {
+        write_text(path, contents);
+        CHECK_THROWS_AS(fmmgalaxy::load_config(path), std::runtime_error);
+    }
+    CHECK_THROWS_AS(fmmgalaxy::output_format_name(static_cast<fmmgalaxy::OutputFormat>(99)), std::runtime_error);
 }
 
 TEST_CASE("Integrator range overloads clamp work to owned particles", "[integrator]") {
@@ -200,6 +391,85 @@ TEST_CASE("MPI ownership helpers partition serial and distributed ranges", "[mpi
     fmmgalaxy::mpi_synchronize_particles(particles, serial);
     const auto execution = fmmgalaxy::mpi_execution();
     CHECK(execution.size >= 1);
+}
+
+TEST_CASE("Provenance hashing matches SHA-256 vectors and optional config metadata", "[provenance]") {
+    write_text("sha256_empty.txt", "");
+    write_text("sha256_abc.txt", "abc");
+    write_text("sha256_long.txt", std::string(64, 'a'));
+
+    CHECK(fmmgalaxy::sha256_file("sha256_empty.txt") ==
+          "e3b0c44298fc1c149afbf4c8996fb924"
+          "27ae41e4649b934ca495991b7852b855");
+    CHECK(fmmgalaxy::sha256_file("sha256_abc.txt") ==
+          "ba7816bf8f01cfea414140de5dae2223"
+          "b00361a396177a9cb410ff61f20015ad");
+    CHECK(fmmgalaxy::sha256_file("sha256_long.txt") ==
+          "ffe054fe7ae0cb6dc65c3af9b61d5209"
+          "f439851db43d0ba5997337df154668eb");
+    CHECK_THROWS_AS(fmmgalaxy::sha256_file("sha256_missing.txt"), std::runtime_error);
+
+    fmmgalaxy::MpiExecution execution;
+    execution.enabled = true;
+    execution.rank = 2;
+    execution.size = 4;
+    const auto provenance = fmmgalaxy::collect_run_provenance(nullptr, execution);
+    CHECK(provenance.config_path == "builtin:default");
+    CHECK(provenance.config_sha256.empty());
+    CHECK(provenance.mpi_enabled);
+    CHECK(provenance.rank_count == 4);
+    CHECK_FALSE(provenance.timestamp_utc.empty());
+}
+
+TEST_CASE("Parquet conversion and snapshot writer use the configured Python bridge", "[io][parquet]") {
+    using Catch::Matchers::WithinAbs;
+    const std::filesystem::path output_dir = "core_utility_parquet_output";
+    std::filesystem::remove_all(output_dir);
+    std::filesystem::create_directories(output_dir);
+
+    const auto fake_python = write_fake_python_bridge(output_dir / "fake_python_bridge");
+    ScopedEnvironmentVariable python_env("FMM_GALAXY_PYTHON", fake_python.string());
+
+    const auto csv_path = output_dir / "snapshot input.csv";
+    const auto parquet_path = output_dir / "snapshot output.parquet";
+    write_text(csv_path, "# time=0\nid,group_id,mass,x,y,z,vx,vy,vz,ax,ay,az\n");
+    CHECK(fmmgalaxy::ParquetConverter{}.convert_snapshot_csv(csv_path, parquet_path, 12, 0.125));
+    CHECK(std::filesystem::exists(parquet_path));
+
+    fmmgalaxy::SimulationConfig config = small_runner_config(output_dir / "writer");
+    config.name = "json \"escape\" test";
+    config.solver = "fmm";
+    config.output.format = fmmgalaxy::OutputFormat::Parquet;
+    config.output.acceleration_dump = true;
+
+    std::vector<fmmgalaxy::Particle> particles(2);
+    particles[0].position = {-0.5, 0.0, 0.0};
+    particles[0].velocity = {0.0, 0.1, 0.0};
+    particles[0].acceleration = {1.0, 0.0, 0.0};
+    particles[0].mass = 0.5;
+    particles[1].position = {0.5, 0.0, 0.0};
+    particles[1].velocity = {0.0, -0.1, 0.0};
+    particles[1].acceleration = {-1.0, 0.0, 0.0};
+    particles[1].mass = 0.5;
+
+    fmmgalaxy::SnapshotWriter writer(config);
+    writer.write_metadata(config, particles.size(), test_provenance());
+    writer.write_snapshot(5, 1.25, particles);
+    writer.write_accelerations(5, 1.25, particles);
+    writer.write_diagnostics(5, 1.25, fmmgalaxy::compute_diagnostics(particles, config.physics), particles.size());
+
+    CHECK(std::filesystem::exists(config.output.directory / "metadata.json"));
+    CHECK(std::filesystem::exists(config.output.directory / "snapshot_000005.parquet"));
+    CHECK_FALSE(std::filesystem::exists(config.output.directory / "snapshot_000005.parquet.tmp.csv"));
+    CHECK(std::filesystem::exists(config.output.directory / "accelerations_000005.csv"));
+    CHECK(std::filesystem::exists(config.output.directory / "diagnostics.csv"));
+    CHECK(read_text(config.output.directory / "metadata.json").find("json \\\"escape\\\" test") != std::string::npos);
+
+    std::ostringstream json;
+    fmmgalaxy::write_json_string(json, "quote\"and\\slash");
+    CHECK(json.str() == "\"quote\\\"and\\\\slash\"");
+    CHECK(std::string(fmmgalaxy::json_bool(true)) == "true");
+    CHECK(std::string(fmmgalaxy::json_bool(false)) == "false");
 }
 
 TEST_CASE("Tree geometry, multipoles, and flat exports preserve spatial structure", "[tree][fmm]") {
@@ -385,6 +655,73 @@ TEST_CASE("Serial runner supports disabled snapshot output and rejects unknown s
         fmmgalaxy::run_configured_simulation(config, execution, test_provenance()),
         std::runtime_error
     );
+}
+
+TEST_CASE("Serial runner writes CSV output and advances each solver family", "[runner]") {
+    const std::filesystem::path output_root = "core_utility_serial_solver_outputs";
+    std::filesystem::remove_all(output_root);
+
+    fmmgalaxy::MpiExecution serial_execution;
+    auto csv_config = small_runner_config(output_root / "direct_csv");
+    csv_config.output.format = fmmgalaxy::OutputFormat::Csv;
+    csv_config.output.acceleration_dump = true;
+    fmmgalaxy::run_configured_simulation(csv_config, serial_execution, test_provenance());
+    CHECK(std::filesystem::exists(csv_config.output.directory / "metadata.json"));
+    CHECK(std::filesystem::exists(csv_config.output.directory / "snapshot_000000.csv"));
+    CHECK(std::filesystem::exists(csv_config.output.directory / "snapshot_000001.csv"));
+    CHECK(std::filesystem::exists(csv_config.output.directory / "accelerations_000001.csv"));
+    CHECK(std::filesystem::exists(csv_config.output.directory / "diagnostics.csv"));
+
+    const std::vector<std::string> solvers{
+        "barnes-hut",
+        "quadrupole-fmm",
+        "cuda-direct",
+        "gpu-direct",
+        "cuda-barnes-hut",
+        "cuda-fmm",
+        "p4-fmm",
+        "cartesian-fmm",
+    };
+    for (const auto& solver : solvers) {
+        auto config = small_runner_config(output_root / solver);
+        config.solver = solver;
+        fmmgalaxy::run_configured_simulation(config, serial_execution, test_provenance());
+        CHECK(std::filesystem::exists(config.output.directory / "metadata.json"));
+    }
+
+    auto empty_config = small_runner_config(output_root / "empty");
+    empty_config.galaxies[0].n_particles = 0;
+    empty_config.galaxies[0].mass = 0.0;
+    CHECK_THROWS_AS(
+        fmmgalaxy::run_configured_simulation(empty_config, serial_execution, test_provenance()),
+        std::runtime_error
+    );
+}
+
+TEST_CASE("Distributed runner dispatches owned-range solver paths without MPI runtime", "[runner][mpi]") {
+    const std::filesystem::path output_root = "core_utility_distributed_solver_outputs";
+    std::filesystem::remove_all(output_root);
+
+    const std::vector<std::pair<std::string, int>> runs{
+        {"direct", 0},
+        {"tree", 1},
+        {"fmm", 0},
+        {"cuda-direct", 1},
+        {"cuda-tree", 0},
+        {"cuda-fmm", 1},
+    };
+    for (const auto& [solver, rank] : runs) {
+        auto config = small_runner_config(output_root / (solver + "_rank" + std::to_string(rank)));
+        config.solver = solver;
+        fmmgalaxy::MpiExecution execution;
+        execution.enabled = true;
+        execution.rank = rank;
+        execution.size = 2;
+        fmmgalaxy::run_configured_simulation(config, execution, test_provenance());
+        if (rank == 0) {
+            CHECK(std::filesystem::exists(config.output.directory / "metadata.json"));
+        }
+    }
 }
 
 TEST_CASE("Serial runner dispatches CPU and CUDA fallback solver aliases", "[runner][cuda]") {
