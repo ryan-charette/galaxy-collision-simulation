@@ -1,5 +1,16 @@
 # Distributed Fast Multipole Galaxy Collision Simulator
 
+[![CI](https://github.com/ryan-charette/galaxy-collision-simulation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ryan-charette/galaxy-collision-simulation/actions/workflows/ci.yml)
+[![Code coverage](https://codecov.io/gh/ryan-charette/galaxy-collision-simulation/branch/main/graph/badge.svg)](https://codecov.io/gh/ryan-charette/galaxy-collision-simulation)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Development status](https://img.shields.io/badge/status-alpha-orange.svg)](CHANGELOG.md)
+[![Citation metadata](https://img.shields.io/badge/citation-CFF-4B44CE.svg)](CITATION.cff)
+[![Python >=3.10](https://img.shields.io/badge/python-%3E%3D3.10-blue.svg)](https://www.python.org/)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg)](https://isocpp.org/)
+[![CMake >=3.20](https://img.shields.io/badge/CMake-%3E%3D3.20-064F8C.svg)](https://cmake.org/)
+[![Tests: Catch2](https://img.shields.io/badge/tests-Catch2-6E40C9.svg)](https://github.com/catchorg/Catch2)
+[![Docs: Sphinx](https://img.shields.io/badge/docs-Sphinx-0A507A.svg)](docs/)
+
 A 3D gravitational N-body simulator for galaxy collision experiments. The project includes a working C++ simulation engine, CSV/Parquet snapshot output, diagnostics, and Python plotting/animation tools.
 
 ## Features
