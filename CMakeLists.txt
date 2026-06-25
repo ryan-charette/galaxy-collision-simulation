@@ -172,6 +172,7 @@ if(BUILD_TESTING)
 
     add_executable(fmm_galaxy_tests
         src/cpp/tests/config_snapshot_tests.cpp
+        src/cpp/tests/core_utility_tests.cpp
         src/cpp/tests/cuda_fallback_tests.cpp
         src/cpp/tests/math_direct_tests.cpp
         src/cpp/tests/tree_fmm_accuracy_tests.cpp
